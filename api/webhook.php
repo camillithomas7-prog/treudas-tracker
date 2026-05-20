@@ -30,11 +30,15 @@ $raw = file_get_contents('php://input');
 if ($raw === '' || $raw === false) { http_response_code(400); exit; }
 
 $cfg    = tracker_config();
-$secret = $cfg['shopify_webhook_secret'] ?? '';
-$hmac   = $_SERVER['HTTP_X_SHOPIFY_HMAC_SHA256'] ?? '';
+
+// Prima cerca nelle settings DB (impostato via /settings.php), fallback su config.php
+tracker_install_schema();
+$dbSecret = tracker_db()->query("SELECT value FROM settings WHERE key = 'shopify_webhook_secret'")->fetchColumn();
+$secret   = $dbSecret ?: ($cfg['shopify_webhook_secret'] ?? '');
+$hmac     = $_SERVER['HTTP_X_SHOPIFY_HMAC_SHA256'] ?? '';
 
 if (!$secret || $secret === 'INSERISCI_SECRET_SHOPIFY_QUI') {
-    error_log('[treudas-tracker] webhook secret non configurato');
+    error_log('[treudas-tracker] webhook secret non configurato (vai su /settings.php)');
     http_response_code(503); exit;
 }
 
