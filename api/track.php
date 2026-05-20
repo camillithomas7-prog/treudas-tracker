@@ -22,9 +22,28 @@ declare(strict_types=1);
 require_once __DIR__ . '/../inc/db.php';
 require_once __DIR__ . '/../inc/helpers.php';
 
+function tr_track_log(int $status, string $result, string $body, string $err = ''): void {
+    try {
+        tracker_install_schema();
+        $stmt = tracker_db()->prepare("
+            INSERT INTO track_logs (ts, status_code, result, origin, user_agent, ip, body_preview, error_msg)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+        $stmt->execute([
+            time(), $status, $result,
+            substr($_SERVER['HTTP_ORIGIN'] ?? '', 0, 200),
+            substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 200),
+            tr_client_ip(),
+            substr($body, 0, 500),
+            $err,
+        ]);
+    } catch (Throwable $e) { /* silenzioso */ }
+}
+
 tr_send_cors();
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+    tr_track_log(405, 'not_post', '');
     http_response_code(405);
     exit;
 }
@@ -32,11 +51,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
 try {
     tracker_install_schema();
 
-    $body = tr_json_in();
+    $rawBody = file_get_contents('php://input') ?: '';
+    $body = $rawBody ? (json_decode($rawBody, true) ?: []) : [];
     $sid  = trim((string)($body['session_id'] ?? ''));
     $type = trim((string)($body['event_type'] ?? ''));
 
     if (!$sid || !preg_match('/^[a-zA-Z0-9_-]{8,64}$/', $sid)) {
+        tr_track_log(400, 'invalid_session_id', $rawBody, "sid=$sid");
         http_response_code(400); exit;
     }
 
@@ -46,6 +67,7 @@ try {
         'thank_you_view',
     ];
     if (!in_array($type, $allowed_events, true)) {
+        tr_track_log(400, 'event_type_invalid', $rawBody, "type=$type");
         http_response_code(400); exit;
     }
 
@@ -140,10 +162,12 @@ try {
     ]);
 
     $db->commit();
+    tr_track_log(204, 'ok', $rawBody, "sid=$sid type=$type");
     http_response_code(204);
 
 } catch (Throwable $e) {
     if (isset($db) && $db->inTransaction()) $db->rollBack();
+    tr_track_log(500, 'exception', $rawBody ?? '', $e->getMessage());
     error_log('[treudas-tracker] track.php: ' . $e->getMessage());
     http_response_code(500);
     if (!empty(tracker_config()['debug'])) {
