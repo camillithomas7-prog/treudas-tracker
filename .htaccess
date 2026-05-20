@@ -1,0 +1,41 @@
+# TREUDAS Tracker — Apache config
+
+RewriteEngine On
+
+# Force HTTPS (Hostinger gestisce SSL automaticamente)
+RewriteCond %{HTTPS} !=on
+RewriteCond %{HTTP:X-Forwarded-Proto} !https
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# Blocca accesso diretto a data/, inc/, backups/, config*.php
+RewriteRule ^data/    - [F,L]
+RewriteRule ^inc/     - [F,L]
+RewriteRule ^backups/ - [F,L]
+RewriteRule ^config(\.|$) - [F,L]
+
+# Sicurezza: nega accesso a file dotted (.env, .git ecc.)
+RewriteRule (^|/)\. - [F,L]
+
+# Default charset
+AddDefaultCharset UTF-8
+
+# PHP error display OFF in produzione (logging interno)
+php_flag display_errors off
+php_value error_reporting "E_ALL & ~E_DEPRECATED & ~E_STRICT & ~E_NOTICE"
+
+# Cache statici
+<IfModule mod_headers.c>
+    <FilesMatch "\.(css|js|svg|png|jpg|jpeg|webp|woff2)$">
+        Header set Cache-Control "public, max-age=2592000"
+    </FilesMatch>
+</IfModule>
+
+# Sicurezza generale
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# Default file
+DirectoryIndex index.php

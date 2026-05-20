@@ -1,0 +1,26 @@
+# Config locale con segreti
+config.php
+
+# Database
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+
+# Backup
+backups/*.zip
+backups/*.tar.gz
+backups/*.sql
+
+# Sistema
+.DS_Store
+*.log
+Thumbs.db
+
+# Editor
+.idea/
+.vscode/
+*.swp
+
+# Test
+/tests/tmp/
