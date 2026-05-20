@@ -34,12 +34,15 @@ $filters = [
     'utm_source'   => $_GET['utm_source']   ?? '',
     'utm_medium'   => $_GET['utm_medium']   ?? '',
     'utm_campaign' => $_GET['utm_campaign'] ?? '',
+    'utm_term'     => $_GET['utm_term']     ?? '',
+    'utm_content'  => $_GET['utm_content']  ?? '',
     'device_type'  => $_GET['device_type']  ?? '',
 ];
 foreach ($filters as $k => $v) if ($v === '') unset($filters[$k]);
 
 $funnel    = tr_funnel($filters);
 $campaigns = tr_campaign_breakdown($filters);
+$creatives = tr_creative_breakdown($filters);
 $trend     = tr_daily_trend($filters);
 $orders    = tr_recent_purchases(20, $filters);
 
@@ -59,6 +62,8 @@ $rps = $topCount > 0 ? $totalRevenue / $topCount : 0;
 $sources    = tr_distinct('utm_source');
 $mediums    = tr_distinct('utm_medium');
 $campaignsD = tr_distinct('utm_campaign');
+$adsetsD    = tr_distinct('utm_term');
+$creativesD = tr_distinct('utm_content');
 ?>
 <!doctype html>
 <html lang="it">
@@ -99,6 +104,22 @@ $campaignsD = tr_distinct('utm_campaign');
                     <option value="">— Tutte —</option>
                     <?php foreach ($campaignsD as $s): ?>
                         <option value="<?= tr_h($s) ?>" <?= ($_GET['utm_campaign'] ?? '')===$s?'selected':'' ?>><?= tr_h($s) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label>Adset
+                <select name="utm_term">
+                    <option value="">— Tutti —</option>
+                    <?php foreach ($adsetsD as $s): ?>
+                        <option value="<?= tr_h($s) ?>" <?= ($_GET['utm_term'] ?? '')===$s?'selected':'' ?>><?= tr_h($s) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label>Creative
+                <select name="utm_content">
+                    <option value="">— Tutti —</option>
+                    <?php foreach ($creativesD as $s): ?>
+                        <option value="<?= tr_h($s) ?>" <?= ($_GET['utm_content'] ?? '')===$s?'selected':'' ?>><?= tr_h($s) ?></option>
                     <?php endforeach; ?>
                 </select>
             </label>
@@ -190,6 +211,53 @@ $campaignsD = tr_distinct('utm_campaign');
                         <span class="muted small"><?= tr_pct((int)$c['product_views'], (int)$c['sessions']) ?></span>
                     </td>
                     <td class="num"><?= number_format((int)$c['add_to_carts'], 0, ',', '.') ?></td>
+                    <td class="num"><?= number_format((int)$c['purchases'], 0, ',', '.') ?></td>
+                    <td class="num <?= $c['sessions']>0 && ($c['purchases']/$c['sessions'])>=0.03 ? 'pos' : 'neg' ?>">
+                        <?= tr_pct((int)$c['purchases'], (int)$c['sessions']) ?>
+                    </td>
+                    <td class="num"><?= tr_money((float)$c['revenue']) ?></td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+        </div>
+        <?php endif; ?>
+    </section>
+
+    <!-- Creative/Ad breakdown -->
+    <section class="card">
+        <h2>Performance per ad (campagna → adset → creative)</h2>
+        <?php if (!$creatives): ?>
+            <p class="muted">Ancora nessun dato per questo periodo. Quando le ads saranno live e i clienti cliccheranno gli annunci con UTM, qui vedrai la performance di ogni singolo creative.</p>
+        <?php else: ?>
+        <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Campagna</th>
+                    <th>Adset</th>
+                    <th>Creative</th>
+                    <th class="num">Sessioni</th>
+                    <th class="num">→ Prodotto</th>
+                    <th class="num">→ Carrello</th>
+                    <th class="num">Checkout</th>
+                    <th class="num">Acquisti</th>
+                    <th class="num">Conv.</th>
+                    <th class="num">Fatturato</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($creatives as $c): ?>
+                <tr>
+                    <td><?= tr_h($c['campagna']) ?></td>
+                    <td><?= tr_h($c['adset']) ?></td>
+                    <td><?= tr_h($c['creative']) ?></td>
+                    <td class="num"><?= number_format((int)$c['sessions'], 0, ',', '.') ?></td>
+                    <td class="num"><?= number_format((int)$c['product_views'], 0, ',', '.') ?>
+                        <span class="muted small"><?= tr_pct((int)$c['product_views'], (int)$c['sessions']) ?></span>
+                    </td>
+                    <td class="num"><?= number_format((int)$c['add_to_carts'], 0, ',', '.') ?></td>
+                    <td class="num"><?= number_format((int)$c['checkouts'], 0, ',', '.') ?></td>
                     <td class="num"><?= number_format((int)$c['purchases'], 0, ',', '.') ?></td>
                     <td class="num <?= $c['sessions']>0 && ($c['purchases']/$c['sessions'])>=0.03 ? 'pos' : 'neg' ?>">
                         <?= tr_pct((int)$c['purchases'], (int)$c['sessions']) ?>

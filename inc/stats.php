@@ -76,6 +76,38 @@ function tr_campaign_breakdown(array $filters = []): array {
 }
 
 /**
+ * Breakdown a 3 livelli: campagna → adset (utm_term) → creative (utm_content)
+ * Mostra le performance di ogni singolo ad/creative Facebook.
+ */
+function tr_creative_breakdown(array $filters = []): array {
+    $db = tracker_db();
+    [$where, $params] = tr_session_filters($filters, 's');
+
+    $sql = "
+        SELECT
+            COALESCE(NULLIF(s.utm_campaign, ''), '(nessuna)') AS campagna,
+            COALESCE(NULLIF(s.utm_term, ''),     '(nessun adset)')    AS adset,
+            COALESCE(NULLIF(s.utm_content, ''),  '(nessun creative)') AS creative,
+            COUNT(DISTINCT s.id) AS sessions,
+            COUNT(DISTINCT CASE WHEN e.event_type = 'product_view'    THEN s.id END) AS product_views,
+            COUNT(DISTINCT CASE WHEN e.event_type = 'add_to_cart'     THEN s.id END) AS add_to_carts,
+            COUNT(DISTINCT CASE WHEN e.event_type = 'checkout_start'  THEN s.id END) AS checkouts,
+            COUNT(DISTINCT CASE WHEN e.event_type = 'purchase'        THEN s.id END) AS purchases,
+            COALESCE(SUM(o.total_price), 0) AS revenue
+        FROM sessions s
+        LEFT JOIN events e ON e.session_id = s.id
+        LEFT JOIN orders o ON o.session_id = s.id
+        WHERE 1=1 $where
+        GROUP BY campagna, adset, creative
+        ORDER BY revenue DESC, sessions DESC
+        LIMIT 100
+    ";
+    $stmt = $db->prepare($sql);
+    $stmt->execute($params);
+    return $stmt->fetchAll();
+}
+
+/**
  * Andamento giornaliero
  */
 function tr_daily_trend(array $filters = []): array {
@@ -137,7 +169,7 @@ function tr_session_filters(array $f, string $alias = 's'): array {
     $w = []; $p = [];
     if (!empty($f['from'])) { $w[] = "$alias.created_at >= :from"; $p[':from'] = (int)$f['from']; }
     if (!empty($f['to']))   { $w[] = "$alias.created_at <= :to";   $p[':to']   = (int)$f['to']; }
-    foreach (['utm_source','utm_medium','utm_campaign','utm_content'] as $k) {
+    foreach (['utm_source','utm_medium','utm_campaign','utm_content','utm_term'] as $k) {
         if (!empty($f[$k])) { $w[] = "$alias.$k = :$k"; $p[":$k"] = $f[$k]; }
     }
     if (!empty($f['device_type'])) {
