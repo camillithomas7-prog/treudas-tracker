@@ -2,11 +2,11 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/inc/db.php';
-require_once __DIR__ . '/inc/auth.php';
 require_once __DIR__ . '/inc/helpers.php';
 require_once __DIR__ . '/inc/stats.php';
 
-$user = tr_auth_require();
+// Dashboard senza autenticazione (URL segreto)
+$user = ['email' => 'TREUDAS'];
 tracker_install_schema();
 
 date_default_timezone_set(tracker_config()['timezone']);
@@ -68,7 +68,6 @@ $campaignsD = tr_distinct('utm_campaign');
     <div class="brand">📊 TREUDAS <span>Tracker</span></div>
     <div class="user-info">
         <span><?= tr_h($user['email']) ?></span>
-        <a href="/logout.php" class="btn-ghost">Esci</a>
     </div>
 </header>
 
