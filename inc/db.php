@@ -7,10 +7,24 @@ function tracker_config(): array {
     static $cfg = null;
     if ($cfg !== null) return $cfg;
     $path = dirname(__DIR__) . '/config.php';
+
+    // Auto-bootstrap: se config.php non esiste, lo creo da example con secret random
     if (!file_exists($path)) {
-        http_response_code(500);
-        die("⚠ config.php mancante. Esegui /install.php oppure copia config.example.php in config.php.");
+        $example = dirname(__DIR__) . '/config.example.php';
+        if (!file_exists($example)) {
+            http_response_code(500);
+            die("⚠ Né config.php né config.example.php trovati.");
+        }
+        $tpl = file_get_contents($example);
+        $tpl = str_replace(
+            'CAMBIARE_QUESTA_STRINGA_SUBITO_random_32+_chars',
+            bin2hex(random_bytes(24)),
+            $tpl
+        );
+        @file_put_contents($path, $tpl);
+        @chmod($path, 0640);
     }
+
     $cfg = require $path;
     return $cfg;
 }
