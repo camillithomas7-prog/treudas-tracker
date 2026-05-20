@@ -70,9 +70,10 @@ $campaignsD = tr_distinct('utm_campaign');
 </head>
 <body>
 <header class="topbar">
-    <div class="brand">📊 TREUDAS <span>Tracker</span></div>
+    <div class="brand">TREUDAS <span>Tracker</span></div>
     <div class="user-info">
-        <span><?= tr_h($user['email']) ?></span>
+        <span>● LIVE</span>
+        <span><?= date('d M H:i') ?></span>
     </div>
 </header>
 
