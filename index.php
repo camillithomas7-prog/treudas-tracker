@@ -66,7 +66,7 @@ $campaignsD = tr_distinct('utm_campaign');
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TREUDAS Tracker — Dashboard</title>
-<link rel="stylesheet" href="/assets/style.css">
+<link rel="stylesheet" href="/assets/style.css?v=<?= @filemtime(__DIR__ . '/assets/style.css') ?>">
 </head>
 <body>
 <header class="topbar">

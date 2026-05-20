@@ -14,7 +14,7 @@ $total = (int)tracker_db()->query("SELECT COUNT(*) FROM track_logs")->fetchColum
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TREUDAS Tracker — Track Logs</title>
-<link rel="stylesheet" href="/assets/style.css">
+<link rel="stylesheet" href="/assets/style.css?v=<?= @filemtime(__DIR__ . '/assets/style.css') ?>">
 <style>
     body { padding: 20px; }
     .log { background: var(--bg-card); border: 1px solid var(--border); padding: 10px 14px; border-radius: 8px; margin-bottom: 8px; font-size: 12px; }
