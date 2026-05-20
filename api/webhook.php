@@ -1,20 +1,7 @@
 <?php
 /**
  * TREUDAS Tracker — webhook Shopify `orders/paid`
- *
- * Configurazione in Shopify Admin:
- *   Settings → Notifications → Webhooks → Create webhook
- *     Event   : Order payment
- *     Format  : JSON
- *     URL     : https://<dominio-tracker>/api/webhook.php
- *
- * Verifica HMAC con il segreto da `config.php → shopify_webhook_secret`.
- *
- * Estrae `_session_id` da:
- *   1. order.note_attributes[]  (cart attributes)
- *   2. line_items[].properties[] (line item properties)
- *
- * Salva in `orders` con riferimento alla sessione tracciata.
+ * Con logging completo per debug.
  */
 
 declare(strict_types=1);
@@ -22,40 +9,65 @@ declare(strict_types=1);
 require_once __DIR__ . '/../inc/db.php';
 require_once __DIR__ . '/../inc/helpers.php';
 
+function tr_webhook_log(int $status, string $result, string $hmacR = '', string $hmacC = '', string $secretPrefix = '', string $bodyPreview = '', string $err = ''): void {
+    try {
+        tracker_install_schema();
+        $stmt = tracker_db()->prepare("
+            INSERT INTO webhook_logs (ts, status_code, result, hmac_received, hmac_calculated, secret_used_prefix, body_preview, error_msg)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+        $stmt->execute([time(), $status, $result, $hmacR, $hmacC, $secretPrefix, substr($bodyPreview, 0, 500), $err]);
+    } catch (Throwable $e) {
+        error_log('[treudas-tracker] webhook log failed: ' . $e->getMessage());
+    }
+}
+
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+    tr_webhook_log(405, 'not_post');
     http_response_code(405); exit;
 }
 
 $raw = file_get_contents('php://input');
-if ($raw === '' || $raw === false) { http_response_code(400); exit; }
+if ($raw === '' || $raw === false) {
+    tr_webhook_log(400, 'empty_body');
+    http_response_code(400); exit;
+}
 
-$cfg    = tracker_config();
+$cfg = tracker_config();
 
-// Prima cerca nelle settings DB (impostato via /settings.php), fallback su config.php
+// Cerca prima nelle settings DB
 tracker_install_schema();
 $dbSecret = tracker_db()->query("SELECT value FROM settings WHERE key = 'shopify_webhook_secret'")->fetchColumn();
 $secret   = $dbSecret ?: ($cfg['shopify_webhook_secret'] ?? '');
 $hmac     = $_SERVER['HTTP_X_SHOPIFY_HMAC_SHA256'] ?? '';
 
+$secretPrefix = $secret ? substr($secret, 0, 6) . '...' . substr($secret, -4) : '(none)';
+$bodyPreview  = substr($raw, 0, 300);
+
 if (!$secret || $secret === 'INSERISCI_SECRET_SHOPIFY_QUI') {
-    error_log('[treudas-tracker] webhook secret non configurato (vai su /settings.php)');
+    tr_webhook_log(503, 'no_secret', $hmac, '', $secretPrefix, $bodyPreview, 'secret non configurato');
     http_response_code(503); exit;
 }
 
 $calc = base64_encode(hash_hmac('sha256', $raw, $secret, true));
+
 if (!hash_equals($calc, $hmac)) {
-    error_log('[treudas-tracker] webhook HMAC mismatch');
+    tr_webhook_log(401, 'hmac_mismatch', $hmac, $calc, $secretPrefix, $bodyPreview, 'HMAC non corrisponde');
     http_response_code(401); exit;
 }
 
 try {
-    tracker_install_schema();
-
     $order = json_decode($raw, true);
-    if (!is_array($order)) { http_response_code(400); exit; }
+    if (!is_array($order)) {
+        tr_webhook_log(400, 'invalid_json', $hmac, $calc, $secretPrefix, $bodyPreview, 'JSON parse failed');
+        http_response_code(400); exit;
+    }
 
     $orderId    = (string)($order['id'] ?? '');
-    if (!$orderId) { http_response_code(400); exit; }
+    if (!$orderId) {
+        tr_webhook_log(400, 'no_order_id', $hmac, $calc, $secretPrefix, $bodyPreview, 'missing order id');
+        http_response_code(400); exit;
+    }
 
     $orderNum   = (string)($order['order_number'] ?? $order['name'] ?? '');
     $total      = (float)($order['total_price'] ?? $order['current_total_price'] ?? 0);
@@ -64,7 +76,6 @@ try {
     $finStatus  = (string)($order['financial_status'] ?? '');
     $createdAt  = !empty($order['created_at']) ? strtotime((string)$order['created_at']) : time();
 
-    // Estrai session_id e UTM dalle note_attributes (cart attributes)
     $sessionId = null;
     $utm = ['utm_source' => null, 'utm_medium' => null, 'utm_campaign' => null];
 
@@ -79,7 +90,6 @@ try {
         }
     }
 
-    // Fallback: cerca nelle line item properties
     if (!$sessionId && !empty($order['line_items']) && is_array($order['line_items'])) {
         foreach ($order['line_items'] as $li) {
             $props = $li['properties'] ?? [];
@@ -98,7 +108,6 @@ try {
     $db = tracker_db();
     $db->beginTransaction();
 
-    // UPSERT
     $stmt = $db->prepare("
         INSERT INTO orders (
             shopify_order_id, session_id, order_number, total_price, currency,
@@ -121,7 +130,6 @@ try {
         $raw,
     ]);
 
-    // Inserisci anche un evento "purchase" sulla session se conosciuta
     if ($sessionId) {
         $chk = $db->prepare("SELECT 1 FROM events WHERE session_id = ? AND event_type = 'purchase' AND meta_json LIKE ?");
         $chk->execute([$sessionId, '%"order_id":"' . $orderId . '"%']);
@@ -141,12 +149,13 @@ try {
     }
 
     $db->commit();
+    tr_webhook_log(200, 'ok', $hmac, $calc, $secretPrefix, $bodyPreview, "order_id=$orderId session_id=" . ($sessionId ?: 'null'));
     http_response_code(200);
     header('Content-Type: text/plain');
     echo 'OK';
 
 } catch (Throwable $e) {
     if (isset($db) && $db->inTransaction()) $db->rollBack();
-    error_log('[treudas-tracker] webhook.php: ' . $e->getMessage());
+    tr_webhook_log(500, 'exception', $hmac, $calc ?? '', $secretPrefix, $bodyPreview, $e->getMessage());
     http_response_code(500);
 }

@@ -127,4 +127,19 @@ function tracker_install_schema(): void {
             value TEXT
         );
     ");
+
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS webhook_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts INTEGER NOT NULL,
+            status_code INTEGER,
+            result TEXT,
+            hmac_received TEXT,
+            hmac_calculated TEXT,
+            secret_used_prefix TEXT,
+            body_preview TEXT,
+            error_msg TEXT
+        );
+    ");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_webhook_logs_ts ON webhook_logs(ts DESC);");
 }
