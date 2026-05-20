@@ -43,7 +43,8 @@ $campaigns = tr_campaign_breakdown($filters);
 $trend     = tr_daily_trend($filters);
 $orders    = tr_recent_purchases(20, $filters);
 
-$topCount  = max(1, $funnel[0]['count'] ?? 1);
+$topCount   = (int)($funnel[0]['count'] ?? 0);
+$topCountDiv = max(1, $topCount); // solo per divisioni (% conversione)
 $totalRevenue = 0;
 foreach ($campaigns as $c) $totalRevenue += (float)$c['revenue'];
 $totalOrders = 0;
@@ -119,7 +120,7 @@ $campaignsD = tr_distinct('utm_campaign');
         <div class="kpi">
             <div class="kpi-label">Acquisti</div>
             <div class="kpi-value"><?= number_format($totalOrders, 0, ',', '.') ?></div>
-            <div class="kpi-sub"><?= tr_pct($totalOrders, $topCount) ?> tasso conversione</div>
+            <div class="kpi-sub"><?= tr_pct($totalOrders, $topCountDiv) ?> tasso conversione</div>
         </div>
         <div class="kpi">
             <div class="kpi-label">Fatturato</div>
@@ -137,8 +138,8 @@ $campaignsD = tr_distinct('utm_campaign');
         <h2>Imbuto di conversione</h2>
         <div class="funnel">
             <?php foreach ($funnel as $i => $step):
-                $w = $topCount > 0 ? max(5, ($step['count'] / $topCount) * 100) : 5;
-                $pct = tr_pct($step['count'], $topCount);
+                $w = $topCount > 0 ? max(5, ($step['count'] / $topCountDiv) * 100) : 5;
+                $pct = tr_pct($step['count'], $topCountDiv);
             ?>
             <div class="funnel-row">
                 <div class="funnel-label"><?= ($i+1).'. '.tr_h($step['label']) ?></div>
