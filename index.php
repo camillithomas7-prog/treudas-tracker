@@ -246,7 +246,7 @@ $campaignsD = tr_distinct('utm_campaign');
     </section>
 
     <footer class="footer">
-        TREUDAS Tracker · dati from <?= date('d/m/Y', $from) ?> to <?= date('d/m/Y', $to) ?>
+        TREUDAS Tracker · dati dal <?= date('d/m/Y', $from) ?> al <?= date('d/m/Y', $to) ?>
     </footer>
 </main>
 </body>
