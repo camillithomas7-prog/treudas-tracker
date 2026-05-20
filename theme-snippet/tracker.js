@@ -58,12 +58,15 @@
 
     function detectPageType() {
         var path = window.location.pathname.toLowerCase();
-        if (path === '/' || path === '' || path === '/index' || path.indexOf('/pages/advertorial') === 0) return 'advertorial_view';
-        if (path.indexOf('/products/') === 0) return 'product_view';
-        if (path.indexOf('/cart') === 0) return 'add_to_cart';
-        if (path.indexOf('/checkouts') === 0 || path.indexOf('/checkout') === 0) return 'checkout_start';
+        // Verifica pagine speciali (più lenient: !== -1 invece di === 0,
+        // così matcha anche prefix locale tipo /it-it/products/)
+        if (path.indexOf('/products/') !== -1) return 'product_view';
+        if (path.indexOf('/cart') !== -1)      return 'add_to_cart';
+        if (path.indexOf('/checkouts') !== -1 || path.indexOf('/checkout') !== -1) return 'checkout_start';
         if (path.indexOf('/thank_you') !== -1) return 'thank_you_view';
-        return null;
+        // Default: homepage / pages / qualunque altra pagina = advertorial_view
+        // (TREUDAS è un funnel single-page, tutto fuori da /products /cart /checkout è advertorial)
+        return 'advertorial_view';
     }
 
     function send(eventType, meta) {
