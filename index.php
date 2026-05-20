@@ -43,12 +43,16 @@ $campaigns = tr_campaign_breakdown($filters);
 $trend     = tr_daily_trend($filters);
 $orders    = tr_recent_purchases(20, $filters);
 
-$topCount   = (int)($funnel[0]['count'] ?? 0);
-$topCountDiv = max(1, $topCount); // solo per divisioni (% conversione)
-$totalRevenue = 0;
-foreach ($campaigns as $c) $totalRevenue += (float)$c['revenue'];
-$totalOrders = 0;
-foreach ($campaigns as $c) $totalOrders += (int)$c['purchases'];
+$topCount    = (int)($funnel[0]['count'] ?? 0);
+$topCountDiv = max(1, $topCount);
+
+// Totali calcolati direttamente da orders (così include anche ordini senza session_id)
+$ordersQuery = "SELECT COUNT(*) AS n, COALESCE(SUM(total_price),0) AS r FROM orders WHERE created_at BETWEEN :from AND :to";
+$stmt = tracker_db()->prepare($ordersQuery);
+$stmt->execute([':from' => $from, ':to' => $to]);
+$ordersRow = $stmt->fetch();
+$totalOrders  = (int)$ordersRow['n'];
+$totalRevenue = (float)$ordersRow['r'];
 $aov = $totalOrders > 0 ? $totalRevenue / $totalOrders : 0;
 $rps = $topCount > 0 ? $totalRevenue / $topCount : 0;
 
