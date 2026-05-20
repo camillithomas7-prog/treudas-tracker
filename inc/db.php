@@ -90,6 +90,13 @@ function tracker_install_schema(): void {
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_events_session_type ON events(session_id, event_type);");
 
+    // Migrazione: aggiungi colonna checkout_token se non esiste (per dedup checkout_start)
+    $cols = $pdo->query("PRAGMA table_info(events)")->fetchAll(PDO::FETCH_COLUMN, 1);
+    if (!in_array('checkout_token', $cols)) {
+        $pdo->exec("ALTER TABLE events ADD COLUMN checkout_token TEXT");
+        $pdo->exec("CREATE INDEX IF NOT EXISTS idx_events_checkout_token ON events(checkout_token)");
+    }
+
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS orders (
             shopify_order_id TEXT PRIMARY KEY,

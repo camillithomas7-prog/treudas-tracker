@@ -138,9 +138,35 @@ try {
         ]);
     }
 
+    // Estrai checkout_token dal payload (può venire da meta o top-level)
+    $checkoutToken = trim((string)(
+        $body['checkout_token']
+        ?? $meta['checkout_token']
+        ?? ''
+    )) ?: null;
+
     // De-dup: alcuni eventi devono valere 1 per sessione (advertorial_view, product_view, ecc.)
     $singleton = ['advertorial_view', 'product_view', 'add_to_cart', 'checkout_start', 'session_start'];
     if (in_array($type, $singleton, true)) {
+
+        // Per checkout_start con token: dedup PRIMA per checkout_token (più affidabile del session_id)
+        if ($type === 'checkout_start' && $checkoutToken) {
+            $chk = $db->prepare("
+                SELECT 1 FROM events
+                WHERE event_type = 'checkout_start'
+                  AND checkout_token = ?
+                LIMIT 1
+            ");
+            $chk->execute([$checkoutToken]);
+            if ($chk->fetchColumn()) {
+                $db->commit();
+                tr_track_log(204, 'dedup_token', $rawBody, "type=$type token=$checkoutToken");
+                http_response_code(204);
+                exit;
+            }
+        }
+
+        // Fallback: dedup classico per (session_id, event_type)
         $chk = $db->prepare("SELECT 1 FROM events WHERE session_id = ? AND event_type = ? LIMIT 1");
         $chk->execute([$sid, $type]);
         if ($chk->fetchColumn()) {
@@ -151,14 +177,15 @@ try {
     }
 
     $evt = $db->prepare("
-        INSERT INTO events (session_id, event_type, ts, client_ts, url, meta_json)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO events (session_id, event_type, ts, client_ts, url, meta_json, checkout_token)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
     ");
     $evt->execute([
         $sid, $type, $now,
         $clientTs ?: null,
         $url,
         $meta ? json_encode($meta, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) : null,
+        $checkoutToken,
     ]);
 
     $db->commit();
