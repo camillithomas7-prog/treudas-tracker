@@ -5,6 +5,15 @@ require_once __DIR__ . '/inc/db.php';
 require_once __DIR__ . '/inc/helpers.php';
 require_once __DIR__ . '/inc/stats.php';
 
+// Anti-cache aggressivo: il dashboard deve essere SEMPRE fresco
+// (Hostinger/LiteSpeed/proxy/browser non devono memorizzare la pagina)
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0, private');
+header('Pragma: no-cache');
+header('Expires: 0');
+header('X-Accel-Expires: 0');           // nginx
+header('Surrogate-Control: no-store');  // CDN/Varnish/LiteSpeed
+header('X-LiteSpeed-Cache-Control: no-cache, no-store, private');
+
 // Dashboard senza autenticazione (URL segreto)
 $user = ['email' => 'TREUDAS'];
 tracker_install_schema();
@@ -70,6 +79,10 @@ $creativesD = tr_distinct('utm_content');
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta http-equiv="refresh" content="60">
 <title>TREUDAS Tracker — Dashboard</title>
 <link rel="stylesheet" href="/assets/style.css?v=<?= @filemtime(__DIR__ . '/assets/style.css') ?>">
 </head>
