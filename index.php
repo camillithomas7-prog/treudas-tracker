@@ -50,6 +50,7 @@ $filters = [
 foreach ($filters as $k => $v) if ($v === '') unset($filters[$k]);
 
 $funnel    = tr_funnel($filters);
+$hourly    = tr_hourly_advertorial($filters);
 $campaigns = tr_campaign_breakdown($filters);
 $creatives = tr_creative_breakdown($filters);
 $trend     = tr_daily_trend($filters);
@@ -191,6 +192,51 @@ $creativesD = tr_distinct('utm_content');
                 </div>
             </div>
             <?php endforeach; ?>
+        </div>
+    </section>
+
+    <!-- Visite per ora -->
+    <?php
+        $hourly_max = 0;
+        $hourly_total = 0;
+        foreach ($hourly as $h) {
+            if ($h['visits'] > $hourly_max) $hourly_max = $h['visits'];
+            $hourly_total += $h['visits'];
+        }
+        $hourly_peak = 0;
+        $hourly_peak_visits = 0;
+        foreach ($hourly as $h) {
+            if ($h['visits'] > $hourly_peak_visits) { $hourly_peak_visits = $h['visits']; $hourly_peak = $h['hour']; }
+        }
+    ?>
+    <section class="card">
+        <h2>Visite advertorial per ora</h2>
+        <p class="muted" style="margin-top:-8px;font-size:13px;">
+            <?php if ($hourly_total > 0): ?>
+                Totale nel periodo: <strong style="color:#ffb380;"><?= number_format($hourly_total,0,',','.') ?></strong> ·
+                Picco alle <strong style="color:#ffb380;"><?= str_pad((string)$hourly_peak, 2, '0', STR_PAD_LEFT) ?>:00</strong>
+                con <strong><?= $hourly_peak_visits ?></strong> visite
+            <?php else: ?>
+                Nessuna visita nel periodo selezionato
+            <?php endif; ?>
+        </p>
+        <div style="display:grid;grid-template-columns:repeat(24,1fr);gap:4px;margin-top:18px;align-items:end;height:160px;">
+            <?php foreach ($hourly as $h):
+                $pct = $hourly_max > 0 ? ($h['visits'] / $hourly_max) * 100 : 0;
+                $hh  = str_pad((string)$h['hour'], 2, '0', STR_PAD_LEFT);
+            ?>
+                <div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:4px;">
+                    <div style="font-size:10px;font-weight:700;color:#e0e0e0;<?= $h['visits']===0?'opacity:0.25;':'' ?>">
+                        <?= $h['visits'] ?>
+                    </div>
+                    <div style="width:100%;height:<?= max(2, $pct) ?>%;background:linear-gradient(180deg,#ffb380,#ff7a45);border-radius:4px 4px 0 0;min-height:2px;<?= $h['visits']===0?'opacity:0.15;':'' ?>" title="Ore <?= $hh ?>:00 — <?= $h['visits'] ?> visite"></div>
+                </div>
+            <?php endforeach; ?>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(24,1fr);gap:4px;margin-top:6px;font-size:9px;color:rgba(255,255,255,0.45);text-align:center;font-family:monospace;">
+            <?php for ($h = 0; $h < 24; $h++): ?>
+                <div><?= str_pad((string)$h, 2, '0', STR_PAD_LEFT) ?></div>
+            <?php endfor; ?>
         </div>
     </section>
 

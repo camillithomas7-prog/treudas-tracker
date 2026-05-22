@@ -136,6 +136,51 @@ function tr_daily_trend(array $filters = []): array {
 }
 
 /**
+ * Visite advertorial per ora del giorno (filtrate sul range $filters).
+ * Filtra su events.ts (non sessions.created_at) cosi' cattura anche le visite
+ * ripetute di sessioni vecchie. Ritorna 24 valori, uno per ora 00-23.
+ */
+function tr_hourly_advertorial(array $filters = []): array {
+    $db = tracker_db();
+
+    $w = ["e.event_type = 'advertorial_view'"];
+    $p = [];
+    if (!empty($filters['from'])) { $w[] = "e.ts >= :from"; $p[':from'] = (int)$filters['from']; }
+    if (!empty($filters['to']))   { $w[] = "e.ts <= :to";   $p[':to']   = (int)$filters['to']; }
+    foreach (['utm_source','utm_medium','utm_campaign','utm_content','utm_term'] as $k) {
+        if (!empty($filters[$k])) { $w[] = "s.$k = :$k"; $p[":$k"] = $filters[$k]; }
+    }
+    if (!empty($filters['device_type'])) {
+        $w[] = "s.device_type = :device_type";
+        $p[':device_type'] = $filters['device_type'];
+    }
+
+    $sql = "
+        SELECT
+            CAST(strftime('%H', datetime(e.ts, 'unixepoch', 'localtime')) AS INTEGER) AS hour,
+            COUNT(DISTINCT e.session_id) AS visits
+          FROM events e
+          JOIN sessions s ON s.id = e.session_id
+         WHERE " . implode(' AND ', $w) . "
+         GROUP BY hour
+         ORDER BY hour ASC
+    ";
+    $stmt = $db->prepare($sql);
+    $stmt->execute($p);
+    $rows = $stmt->fetchAll();
+
+    // Riempio array 24 ore con 0 dove non c'e' nulla
+    $out = [];
+    for ($h = 0; $h < 24; $h++) {
+        $out[$h] = ['hour' => $h, 'visits' => 0];
+    }
+    foreach ($rows as $r) {
+        $out[(int)$r['hour']]['visits'] = (int)$r['visits'];
+    }
+    return array_values($out);
+}
+
+/**
  * Ultimi acquisti
  */
 function tr_recent_purchases(int $limit = 20, array $filters = []): array {
