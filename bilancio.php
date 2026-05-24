@@ -151,24 +151,20 @@ $panel_active = 'bilancio';
                     $isToday = $date === date('Y-m-d');
                     $isWknd  = in_array((int)date('w', strtotime($date)), [0,6], true);
                 ?>
-                    <tr class="<?= $isToday ? 'row-today' : '' ?> <?= $isWknd ? 'row-weekend' : '' ?>">
-                        <form method="post" class="daily-row-form">
-                            <input type="hidden" name="action" value="save_day">
-                            <input type="hidden" name="date" value="<?= $date ?>">
-                            <td class="day-cell">
-                                <strong><?= sprintf('%02d', $d) ?></strong>
-                                <small class="muted"><?= ['Dom','Lun','Mar','Mer','Gio','Ven','Sab'][(int)date('w', strtotime($date))] ?></small>
-                            </td>
-                            <td class="num"><input type="text" name="spese_spedizione" value="<?= number_format((float)$row['spese_spedizione'], 2, '.', '') ?>" class="cost-cell"></td>
-                            <td class="num"><input type="text" name="spesa_merce"      value="<?= number_format((float)$row['spesa_merce'], 2, '.', '') ?>"      class="cost-cell"></td>
-                            <td class="num"><input type="text" name="spesa_ads"        value="<?= number_format((float)$row['spesa_ads'], 2, '.', '') ?>"        class="cost-cell"></td>
-                            <td class="num"><input type="text" name="spesa_influencer" value="<?= number_format((float)$row['spesa_influencer'], 2, '.', '') ?>" class="cost-cell"></td>
-                            <td class="num"><input type="text" name="spesa_team"       value="<?= number_format((float)$row['spesa_team'], 2, '.', '') ?>"       class="cost-cell"></td>
-                            <td class="num"><input type="text" name="spese_varie"      value="<?= number_format((float)$row['spese_varie'], 2, '.', '') ?>"      class="cost-cell"></td>
-                            <td class="num"><input type="text" name="bonifici_brt"     value="<?= number_format((float)$row['bonifici_brt'], 2, '.', '') ?>"     class="cost-cell"></td>
-                            <td class="num" style="color: var(--accent-2); font-weight: 700;">€ <?= number_format($dayTot, 2, ',', '.') ?></td>
-                            <td><input type="text" name="note" value="<?= tr_h((string)($row['note'] ?? '')) ?>" class="note-cell" placeholder="…"></td>
-                        </form>
+                    <tr class="daily-row <?= $isToday ? 'row-today' : '' ?> <?= $isWknd ? 'row-weekend' : '' ?>" data-date="<?= $date ?>">
+                        <td class="day-cell">
+                            <strong><?= sprintf('%02d', $d) ?></strong>
+                            <small class="muted"><?= ['Dom','Lun','Mar','Mer','Gio','Ven','Sab'][(int)date('w', strtotime($date))] ?></small>
+                        </td>
+                        <td class="num"><input type="text" data-field="spese_spedizione" value="<?= number_format((float)$row['spese_spedizione'], 2, '.', '') ?>" class="cost-cell"></td>
+                        <td class="num"><input type="text" data-field="spesa_merce"      value="<?= number_format((float)$row['spesa_merce'], 2, '.', '') ?>"      class="cost-cell"></td>
+                        <td class="num"><input type="text" data-field="spesa_ads"        value="<?= number_format((float)$row['spesa_ads'], 2, '.', '') ?>"        class="cost-cell"></td>
+                        <td class="num"><input type="text" data-field="spesa_influencer" value="<?= number_format((float)$row['spesa_influencer'], 2, '.', '') ?>" class="cost-cell"></td>
+                        <td class="num"><input type="text" data-field="spesa_team"       value="<?= number_format((float)$row['spesa_team'], 2, '.', '') ?>"       class="cost-cell"></td>
+                        <td class="num"><input type="text" data-field="spese_varie"      value="<?= number_format((float)$row['spese_varie'], 2, '.', '') ?>"      class="cost-cell"></td>
+                        <td class="num"><input type="text" data-field="bonifici_brt"     value="<?= number_format((float)$row['bonifici_brt'], 2, '.', '') ?>"     class="cost-cell"></td>
+                        <td class="num row-total">€ <?= number_format($dayTot, 2, ',', '.') ?></td>
+                        <td><input type="text" data-field="note" value="<?= tr_h((string)($row['note'] ?? '')) ?>" class="note-cell" placeholder="…"></td>
                     </tr>
                 <?php endfor; ?>
                 </tbody>
@@ -294,33 +290,48 @@ $panel_active = 'bilancio';
 </main>
 
 <script>
-// Auto-save AJAX per ogni riga giornaliera
-document.querySelectorAll('.daily-row-form').forEach(form => {
-    const inputs = form.querySelectorAll('input[type="text"]');
+// Auto-save AJAX per ogni cella, no <form> annidati (HTML invalido in <tr>)
+function fmtEuro(n) {
+    return '€ ' + n.toFixed(2).replace('.', ',');
+}
+function updateRowTotal(row) {
+    let tot = 0;
+    row.querySelectorAll('.cost-cell').forEach(c => {
+        tot += parseFloat(String(c.value).replace(',', '.')) || 0;
+    });
+    const totCell = row.querySelector('.row-total');
+    if (totCell) totCell.textContent = fmtEuro(tot);
+}
+
+document.querySelectorAll('tr.daily-row').forEach(row => {
+    const date = row.dataset.date;
+    const inputs = row.querySelectorAll('input[data-field]');
     inputs.forEach(inp => {
         let last = inp.value;
-        const trigger = async () => {
+        const save = async () => {
             if (inp.value === last) return;
             last = inp.value;
+            inp.classList.remove('saved', 'error');
             inp.classList.add('saving');
+
+            const fd = new FormData();
+            fd.append('action', 'save_day');
+            fd.append('date', date);
+            inputs.forEach(i => fd.append(i.dataset.field, i.value));
+
             try {
                 const r = await fetch('/bilancio.php', {
                     method: 'POST',
-                    body: new FormData(form),
+                    body: fd,
                     headers: { 'X-Requested-With': 'XMLHttpRequest' },
                 });
                 const j = await r.json();
+                inp.classList.remove('saving');
                 if (j.ok) {
-                    inp.classList.remove('saving');
                     inp.classList.add('saved');
                     setTimeout(() => inp.classList.remove('saved'), 900);
-                    // Aggiorna il totale di riga in modo cosmetico
-                    let tot = 0;
-                    form.querySelectorAll('.cost-cell').forEach(c => tot += parseFloat(String(c.value).replace(',', '.')) || 0);
-                    const totCell = form.parentElement.querySelector('td.num[style*="accent-2"]');
-                    if (totCell) totCell.textContent = '€ ' + tot.toFixed(2).replace('.', ',');
+                    updateRowTotal(row);
                 } else {
-                    inp.classList.remove('saving');
                     inp.classList.add('error');
                 }
             } catch (e) {
@@ -328,8 +339,10 @@ document.querySelectorAll('.daily-row-form').forEach(form => {
                 inp.classList.add('error');
             }
         };
-        inp.addEventListener('blur', trigger);
-        inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } });
+        inp.addEventListener('blur', save);
+        inp.addEventListener('keydown', e => {
+            if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+        });
     });
 });
 </script>
