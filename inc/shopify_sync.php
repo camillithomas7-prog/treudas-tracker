@@ -75,6 +75,100 @@ function sh_sync_orders(bool $fullRebuild = false): array {
     ];
 }
 
+function sh_upsert_order_items(int $orderId, array $items): void {
+    $pdo = tracker_db();
+    $pdo->prepare("DELETE FROM shopify_order_items WHERE order_id = ?")->execute([$orderId]);
+    if (empty($items)) return;
+    $stmt = $pdo->prepare("
+        INSERT INTO shopify_order_items (order_id, line_id, product_id, variant_id, title, variant_title, quantity, price)
+        VALUES (:oid, :lid, :pid, :vid, :title, :vtitle, :qty, :price)
+        ON CONFLICT(order_id, line_id) DO UPDATE SET
+            product_id = excluded.product_id,
+            variant_id = excluded.variant_id,
+            title = excluded.title,
+            variant_title = excluded.variant_title,
+            quantity = excluded.quantity,
+            price = excluded.price
+    ");
+    foreach ($items as $li) {
+        $stmt->execute([
+            ':oid'    => $orderId,
+            ':lid'    => (int)($li['id'] ?? 0),
+            ':pid'    => isset($li['product_id']) ? (int)$li['product_id'] : null,
+            ':vid'    => isset($li['variant_id']) ? (int)$li['variant_id'] : null,
+            ':title'  => (string)($li['title'] ?? ($li['name'] ?? '')),
+            ':vtitle' => (string)($li['variant_title'] ?? ''),
+            ':qty'    => (int)($li['quantity'] ?? 0),
+            ':price'  => (float)($li['price'] ?? 0),
+        ]);
+    }
+}
+
+function sh_sync_products(): array {
+    $start = microtime(true);
+    $url = sh_api_url('products.json', ['limit' => 250, 'fields' => 'id,title,handle,status,product_type,updated_at,image']);
+    $total = 0;
+    $pdo = tracker_db();
+    $stmt = $pdo->prepare("
+        INSERT INTO shopify_products (id, title, handle, status, product_type, image_url, synced_at, shop_updated_at)
+        VALUES (:id, :title, :handle, :status, :ptype, :img, :synced, :shopupd)
+        ON CONFLICT(id) DO UPDATE SET
+            title = excluded.title,
+            handle = excluded.handle,
+            status = excluded.status,
+            product_type = excluded.product_type,
+            image_url = excluded.image_url,
+            synced_at = excluded.synced_at,
+            shop_updated_at = excluded.shop_updated_at
+    ");
+
+    while ($url) {
+        $r = sh_get($url);
+        if (!$r['ok']) {
+            return [
+                'ok' => false,
+                'synced' => $total,
+                'error' => $r['error'],
+                'duration_ms' => (int)((microtime(true) - $start) * 1000),
+            ];
+        }
+        foreach (($r['body']['products'] ?? []) as $p) {
+            $stmt->execute([
+                ':id'      => (int)$p['id'],
+                ':title'   => (string)($p['title'] ?? ''),
+                ':handle'  => (string)($p['handle'] ?? ''),
+                ':status'  => (string)($p['status'] ?? ''),
+                ':ptype'   => (string)($p['product_type'] ?? ''),
+                ':img'     => (string)($p['image']['src'] ?? ''),
+                ':synced'  => time(),
+                ':shopupd' => isset($p['updated_at']) ? strtotime($p['updated_at']) : null,
+            ]);
+            $total++;
+        }
+        $url = $r['next_url'];
+    }
+
+    sh_setting_set('shopify_products_last_sync', (string)time());
+    sh_setting_set('shopify_products_last_count', (string)$total);
+
+    return [
+        'ok' => true,
+        'synced' => $total,
+        'error' => null,
+        'duration_ms' => (int)((microtime(true) - $start) * 1000),
+    ];
+}
+
+function sh_sync_products_throttled(int $minSecondsAgo = 600): array {
+    $last = (int)(sh_setting_get('shopify_products_last_sync') ?? 0);
+    if ($last > 0 && (time() - $last) < $minSecondsAgo) {
+        return ['ok' => true, 'synced' => 0, 'skipped' => true, 'error' => null, 'duration_ms' => 0];
+    }
+    $r = sh_sync_products();
+    $r['skipped'] = false;
+    return $r;
+}
+
 function sh_upsert_order(array $o): void {
     $pdo = tracker_db();
 
@@ -186,6 +280,9 @@ function sh_upsert_order(array $o): void {
         ':synced'       => time(),
         ':shop_upd'     => isset($o['updated_at']) ? strtotime($o['updated_at']) : null,
     ]);
+
+    // Aggiorna anche le righe ordine per aggregati COGS per prodotto
+    sh_upsert_order_items((int)$o['id'], (array)($o['line_items'] ?? []));
 }
 
 /**

@@ -225,4 +225,38 @@ function tracker_install_schema(): void {
             PRIMARY KEY (year, month)
         );
     ");
+
+    // Catalogo prodotti Shopify (per COGS unit cost)
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS shopify_products (
+            id INTEGER PRIMARY KEY,
+            title TEXT,
+            handle TEXT,
+            status TEXT,
+            product_type TEXT,
+            image_url TEXT,
+            cost_unit REAL DEFAULT 0,
+            synced_at INTEGER,
+            shop_updated_at INTEGER
+        );
+    ");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_sp_status ON shopify_products(status);");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_sp_title ON shopify_products(title);");
+
+    // Line items per ordine (per aggregare volume/ordini per prodotto e COGS per ordine)
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS shopify_order_items (
+            order_id INTEGER NOT NULL,
+            line_id INTEGER NOT NULL,
+            product_id INTEGER,
+            variant_id INTEGER,
+            title TEXT,
+            variant_title TEXT,
+            quantity INTEGER,
+            price REAL,
+            PRIMARY KEY (order_id, line_id)
+        );
+    ");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_soi_product ON shopify_order_items(product_id);");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_soi_order ON shopify_order_items(order_id);");
 }

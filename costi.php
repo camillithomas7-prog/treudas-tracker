@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/inc/db.php';
 require_once __DIR__ . '/inc/helpers.php';
 require_once __DIR__ . '/inc/shopify_api.php';
+require_once __DIR__ . '/inc/shopify_sync.php';
 require_once __DIR__ . '/inc/shopify_stats.php';
 
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0, private');
@@ -12,76 +13,65 @@ header('Pragma: no-cache');
 tracker_install_schema();
 date_default_timezone_set(tracker_config()['timezone']);
 
+if (!sh_get_token()) {
+    header('Location: /shopify_oauth.php?need_token=1');
+    exit;
+}
+
 $msg = '';
+
+// POST: salva costi logistici
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
-    $year  = (int)($_POST['year']  ?? 0);
-    $month = (int)($_POST['month'] ?? 0);
-    if ($year >= 2020 && $year <= 2100 && $month >= 1 && $month <= 12) {
-        sh_costs_upsert($year, $month, [
-            'spese_spedizione' => (float)str_replace(',', '.', (string)($_POST['spese_spedizione'] ?? 0)),
-            'spesa_merce'      => (float)str_replace(',', '.', (string)($_POST['spesa_merce'] ?? 0)),
-            'spesa_ads'        => (float)str_replace(',', '.', (string)($_POST['spesa_ads'] ?? 0)),
-            'spesa_influencer' => (float)str_replace(',', '.', (string)($_POST['spesa_influencer'] ?? 0)),
-            'spesa_team'       => (float)str_replace(',', '.', (string)($_POST['spesa_team'] ?? 0)),
-            'spese_varie'      => (float)str_replace(',', '.', (string)($_POST['spese_varie'] ?? 0)),
-            'bonifici_brt'     => (float)str_replace(',', '.', (string)($_POST['bonifici_brt'] ?? 0)),
-            'note'             => (string)($_POST['note'] ?? ''),
-        ]);
-        $msg = sprintf('✔ Costi salvati per %02d/%d.', $month, $year);
+    $action = $_POST['action'] ?? '';
+    if ($action === 'logistics') {
+        $shipping = (float)str_replace(',', '.', (string)($_POST['shipping'] ?? 0));
+        $return   = (float)str_replace(',', '.', (string)($_POST['return']   ?? 0));
+        $stock    = (float)str_replace(',', '.', (string)($_POST['stock']    ?? 0));
+        sh_cogs_unit_costs_set($shipping, $return, $stock);
+        $msg = '✔ Costi logistici aggiornati.';
+    } elseif ($action === 'product_cost') {
+        $pid  = (int)($_POST['product_id'] ?? 0);
+        $cost = (float)str_replace(',', '.', (string)($_POST['cost'] ?? 0));
+        if ($pid > 0) {
+            sh_product_cost_set($pid, $cost);
+            // AJAX support: rispondi JSON se richiesto
+            if (($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'XMLHttpRequest') {
+                header('Content-Type: application/json');
+                echo json_encode(['ok' => true, 'product_id' => $pid, 'cost' => $cost]);
+                exit;
+            }
+            $msg = sprintf('✔ Costo prodotto #%d aggiornato a € %s.', $pid, number_format($cost, 2, ',', '.'));
+        }
+    } elseif ($action === 'sync_products') {
+        $r = sh_sync_products();
+        $msg = $r['ok'] ? sprintf('✔ Sincronizzati %d prodotti.', $r['synced']) : '⚠ Errore sync: ' . $r['error'];
     }
 }
 
-// Anno selezionato
-$year = (int)($_GET['year'] ?? date('Y'));
-$yearsAvail = [];
-$rows = sh_costs_all();
-foreach ($rows as $r) $yearsAvail[(int)$r['year']] = true;
-$yearsAvail[(int)date('Y')] = true;
-$yearsAvail = array_keys($yearsAvail);
-rsort($yearsAvail);
+// Sync prodotti (throttled 10 min) per avere catalogo aggiornato
+sh_sync_products_throttled(600);
+sh_sync_orders_throttled(60);
 
-$monthlyData = [];
-for ($m = 1; $m <= 12; $m++) {
-    $costs = sh_costs_for_month($year, $m);
-    $rev   = sh_revenue_for_month($year, $m);
-    $totCosts = sh_costs_month_total($costs);
-    $monthlyData[$m] = [
-        'costs'   => $costs,
-        'rev'     => $rev,
-        'tot_c'   => $totCosts,
-        'margin'  => (float)$rev['netto'] - $totCosts - (float)($costs['bonifici_brt'] ?? 0),
-    ];
+$search = trim((string)($_GET['q'] ?? ''));
+$products = sh_products_catalog($search);
+
+$unitCosts = sh_cogs_unit_costs();
+
+// Periodo per le KPI logistiche (default 30gg)
+$preset = $_GET['range'] ?? '30d';
+$now = time();
+switch ($preset) {
+    case 'today':     $from = strtotime('today'); $to = $now; break;
+    case 'yesterday': $from = strtotime('yesterday'); $to = strtotime('today') - 1; break;
+    case '7d':        $from = $now - 7 * 86400; $to = $now; break;
+    case '30d':       $from = $now - 30 * 86400; $to = $now; break;
+    case '90d':       $from = $now - 90 * 86400; $to = $now; break;
+    case 'all':       $from = 0; $to = $now; break;
+    default:          $from = $now - 30 * 86400; $to = $now;
 }
+$cogsKpi = sh_cogs_kpi($from, $to, $unitCosts);
 
-$totals = [
-    'lordo'   => 0,
-    'netto'   => 0,
-    'sped'    => 0,
-    'merce'   => 0,
-    'ads'     => 0,
-    'inf'     => 0,
-    'team'    => 0,
-    'varie'   => 0,
-    'brt'     => 0,
-    'tot_c'   => 0,
-    'margin'  => 0,
-];
-foreach ($monthlyData as $d) {
-    $totals['lordo']  += (float)$d['rev']['lordo'];
-    $totals['netto']  += (float)$d['rev']['netto'];
-    $totals['sped']   += (float)$d['costs']['spese_spedizione'];
-    $totals['merce']  += (float)$d['costs']['spesa_merce'];
-    $totals['ads']    += (float)$d['costs']['spesa_ads'];
-    $totals['inf']    += (float)$d['costs']['spesa_influencer'];
-    $totals['team']   += (float)$d['costs']['spesa_team'];
-    $totals['varie']  += (float)$d['costs']['spese_varie'];
-    $totals['brt']    += (float)$d['costs']['bonifici_brt'];
-    $totals['tot_c']  += (float)$d['tot_c'];
-    $totals['margin'] += (float)$d['margin'];
-}
-
-$editMonth = (int)($_GET['edit'] ?? 0);
-$mesiIt = ['','Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
+$lastProductsSync = (int)(sh_setting_get('shopify_products_last_sync') ?? 0);
 
 $panel_active = 'costi';
 ?>
@@ -90,7 +80,7 @@ $panel_active = 'costi';
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Gestionale TREUDAS — Costi & Bilancio</title>
+<title>Gestionale TREUDAS — Costi & COGS</title>
 <link rel="stylesheet" href="/assets/style.css?v=<?= @filemtime(__DIR__ . '/assets/style.css') ?>">
 <link rel="stylesheet" href="/assets/panel.css?v=<?= @filemtime(__DIR__ . '/assets/panel.css') ?>">
 </head>
@@ -99,125 +89,163 @@ $panel_active = 'costi';
 
 <main class="container">
 
+    <div class="page-title">
+        <h1>Costi & COGS</h1>
+        <p class="muted">Costo unitario per evasione, rientro, giacenza e catalogo prodotti</p>
+    </div>
+
     <?php if ($msg): ?><div class="alert alert-ok"><?= tr_h($msg) ?></div><?php endif; ?>
 
-    <form method="get" class="filters">
-        <div class="filter-row">
-            <label>Anno
-                <select name="year" onchange="this.form.submit()">
-                    <?php foreach ($yearsAvail as $y): ?>
-                        <option value="<?= $y ?>" <?= $y === $year ? 'selected' : '' ?>><?= $y ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </label>
+    <!-- Filtri periodo -->
+    <form method="get" class="filters" style="margin-top: 18px;">
+        <div class="filter-pills">
+            <?php foreach (['today'=>'Oggi','yesterday'=>'Ieri','7d'=>'7gg','30d'=>'30gg','90d'=>'90gg','all'=>'Tutto'] as $k=>$v): ?>
+                <a href="?range=<?= $k ?>&q=<?= urlencode($search) ?>" class="pill <?= $preset===$k ? 'active' : '' ?>"><?= $v ?></a>
+            <?php endforeach; ?>
         </div>
     </form>
 
+    <!-- KPI logistici editabili -->
+    <form method="post" class="cogs-kpi-row">
+        <input type="hidden" name="action" value="logistics">
+
+        <div class="cogs-kpi cogs-kpi-cyan">
+            <div class="cogs-kpi-label">● Spedizione</div>
+            <input type="text" name="shipping" value="<?= number_format($unitCosts['shipping'], 2, '.', '') ?>" class="cogs-kpi-input">
+            <div class="cogs-kpi-sub">€/ordine — Pagata su ogni ordine spedito</div>
+            <div class="cogs-kpi-meta">applicato a <?= (int)$cogsKpi['n_spediti'] ?> ordini → € <?= number_format($cogsKpi['cost_shipping'], 2, ',', '.') ?></div>
+        </div>
+
+        <div class="cogs-kpi cogs-kpi-orange">
+            <div class="cogs-kpi-label">● Rientro</div>
+            <input type="text" name="return" value="<?= number_format($unitCosts['return'], 2, '.', '') ?>" class="cogs-kpi-input">
+            <div class="cogs-kpi-sub">€/ordine rientrato — Solo per ordini rientrati in magazzino</div>
+            <div class="cogs-kpi-meta">applicato a <?= (int)$cogsKpi['n_rientrati'] ?> ordini → € <?= number_format($cogsKpi['cost_return'], 2, ',', '.') ?></div>
+        </div>
+
+        <div class="cogs-kpi cogs-kpi-yellow">
+            <div class="cogs-kpi-label">● Giacenza</div>
+            <input type="text" name="stock" value="<?= number_format($unitCosts['stock'], 2, '.', '') ?>" class="cogs-kpi-input">
+            <div class="cogs-kpi-sub">€/ordine in giacenza — Solo per ordini in giacenza</div>
+            <div class="cogs-kpi-meta">applicato a <?= (int)$cogsKpi['n_giacenza'] ?> ordini → € <?= number_format($cogsKpi['cost_stock'], 2, ',', '.') ?></div>
+        </div>
+
+        <div style="grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; gap: 14px; flex-wrap: wrap;">
+            <div class="muted" style="font-size: 13px;">
+                Totale costi logistici nel periodo: <strong style="color: var(--accent-2);">€ <?= number_format($cogsKpi['cost_logistics'], 2, ',', '.') ?></strong>
+                · COGS prodotto: <strong style="color: var(--accent-2);">€ <?= number_format($cogsKpi['cogs_prodotto'], 2, ',', '.') ?></strong>
+            </div>
+            <button type="submit">Salva costi logistici</button>
+        </div>
+    </form>
+
+    <!-- Nota spese variabili -->
+    <div class="info-box">
+        <strong style="color: var(--pink);">● Spese variabili (Ads, Team, Influencer, Varie)</strong>
+        <p class="muted" style="margin: 8px 0 0 0; font-size: 13px;">
+            Le spese che variano mese per mese (pubblicità, team, influencer, spese varie)
+            si configurano nella sezione <a href="/bilancio.php" style="color: var(--accent-2);">Bilancio</a>
+            mese per mese e vengono usate per il calcolo del margine annuale.
+        </p>
+    </div>
+
+    <!-- Catalogo prodotti -->
     <section class="panel-section">
-        <h2>Bilancio <?= $year ?></h2>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+            <div>
+                <h2 style="margin: 0;">● Catalogo prodotti <span class="muted" style="font-weight: 400; font-size: 14px;">— <?= count($products) ?> configurati</span></h2>
+                <?php if ($lastProductsSync): ?>
+                    <small class="muted">Ultimo sync prodotti: <?= tr_h(date('d/m H:i', $lastProductsSync)) ?></small>
+                <?php endif; ?>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <form method="get" style="margin: 0;">
+                    <input type="hidden" name="range" value="<?= tr_h($preset) ?>">
+                    <input type="text" name="q" value="<?= tr_h($search) ?>" placeholder="Cerca prodotto…" style="background: rgba(20,28,56,0.6); border: 1px solid var(--glass-border); color: var(--text); padding: 8px 14px; border-radius: 8px; font-size: 13px;">
+                </form>
+                <form method="post" style="margin: 0;">
+                    <input type="hidden" name="action" value="sync_products">
+                    <button type="submit" class="btn-sm">↻ Sync prodotti</button>
+                </form>
+            </div>
+        </div>
+
         <div class="panel-table-wrap">
             <table class="panel-table">
                 <thead>
                     <tr>
-                        <th>Mese</th>
-                        <th class="num">Fatturato lordo</th>
-                        <th class="num">Netto (post resi)</th>
-                        <th class="num">Spedizione</th>
-                        <th class="num">Merce</th>
-                        <th class="num">Ads</th>
-                        <th class="num">Influencer</th>
-                        <th class="num">Team</th>
-                        <th class="num">Varie</th>
-                        <th class="num">BRT</th>
-                        <th class="num">Tot costi</th>
-                        <th class="num">Margine</th>
-                        <th></th>
+                        <th>Prodotto</th>
+                        <th class="num">Volume</th>
+                        <th class="num">Ordini</th>
+                        <th class="num">Costo (€)</th>
                     </tr>
                 </thead>
                 <tbody>
-                <?php for ($m = 1; $m <= 12; $m++): $d = $monthlyData[$m]; ?>
+                <?php if (empty($products)): ?>
+                    <tr><td colspan="4" class="muted" style="text-align: center; padding: 30px;">Nessun prodotto. Clicca "↻ Sync prodotti".</td></tr>
+                <?php else: foreach ($products as $p): ?>
                     <tr>
-                        <td><strong><?= tr_h($mesiIt[$m]) ?></strong></td>
-                        <td class="num">€ <?= number_format((float)$d['rev']['lordo'], 2, ',', '.') ?></td>
-                        <td class="num">€ <?= number_format((float)$d['rev']['netto'], 2, ',', '.') ?></td>
-                        <td class="num"><?= number_format((float)$d['costs']['spese_spedizione'], 2, ',', '.') ?></td>
-                        <td class="num"><?= number_format((float)$d['costs']['spesa_merce'], 2, ',', '.') ?></td>
-                        <td class="num"><?= number_format((float)$d['costs']['spesa_ads'], 2, ',', '.') ?></td>
-                        <td class="num"><?= number_format((float)$d['costs']['spesa_influencer'], 2, ',', '.') ?></td>
-                        <td class="num"><?= number_format((float)$d['costs']['spesa_team'], 2, ',', '.') ?></td>
-                        <td class="num"><?= number_format((float)$d['costs']['spese_varie'], 2, ',', '.') ?></td>
-                        <td class="num"><?= number_format((float)$d['costs']['bonifici_brt'], 2, ',', '.') ?></td>
-                        <td class="num">€ <?= number_format((float)$d['tot_c'], 2, ',', '.') ?></td>
-                        <td class="num" style="color: <?= $d['margin'] >= 0 ? 'var(--pos)' : 'var(--neg)' ?>;">
-                            € <?= number_format((float)$d['margin'], 2, ',', '.') ?>
+                        <td>
+                            <?= tr_h($p['title']) ?>
+                            <?php if ($p['status'] === 'draft'): ?><span class="badge" style="margin-left: 8px;">Draft</span><?php endif; ?>
+                            <?php if ($p['status'] === 'archived'): ?><span class="badge" style="margin-left: 8px;">Archived</span><?php endif; ?>
                         </td>
-                        <td><a href="?year=<?= $year ?>&edit=<?= $m ?>#edit" class="btn-sm">Modifica</a></td>
+                        <td class="num" style="color: var(--cyan);"><?= number_format((int)$p['volume'], 0, ',', '.') ?></td>
+                        <td class="num"><?= number_format((int)$p['ordini'], 0, ',', '.') ?></td>
+                        <td class="num">
+                            <form method="post" class="inline-cost-form" data-pid="<?= (int)$p['id'] ?>">
+                                <input type="hidden" name="action" value="product_cost">
+                                <input type="hidden" name="product_id" value="<?= (int)$p['id'] ?>">
+                                <input type="text" name="cost" value="<?= number_format((float)$p['cost_unit'], 2, '.', '') ?>" class="cost-input-inline">
+                            </form>
+                        </td>
                     </tr>
-                <?php endfor; ?>
+                <?php endforeach; endif; ?>
                 </tbody>
-                <tfoot>
-                    <tr style="font-weight: 700;">
-                        <td>TOTALI <?= $year ?></td>
-                        <td class="num">€ <?= number_format($totals['lordo'], 2, ',', '.') ?></td>
-                        <td class="num">€ <?= number_format($totals['netto'], 2, ',', '.') ?></td>
-                        <td class="num"><?= number_format($totals['sped'], 2, ',', '.') ?></td>
-                        <td class="num"><?= number_format($totals['merce'], 2, ',', '.') ?></td>
-                        <td class="num"><?= number_format($totals['ads'], 2, ',', '.') ?></td>
-                        <td class="num"><?= number_format($totals['inf'], 2, ',', '.') ?></td>
-                        <td class="num"><?= number_format($totals['team'], 2, ',', '.') ?></td>
-                        <td class="num"><?= number_format($totals['varie'], 2, ',', '.') ?></td>
-                        <td class="num"><?= number_format($totals['brt'], 2, ',', '.') ?></td>
-                        <td class="num">€ <?= number_format($totals['tot_c'], 2, ',', '.') ?></td>
-                        <td class="num" style="color: <?= $totals['margin'] >= 0 ? 'var(--pos)' : 'var(--neg)' ?>;">
-                            € <?= number_format($totals['margin'], 2, ',', '.') ?>
-                        </td>
-                        <td></td>
-                    </tr>
-                </tfoot>
             </table>
         </div>
     </section>
 
-    <?php if ($editMonth >= 1 && $editMonth <= 12): $c = $monthlyData[$editMonth]['costs']; ?>
-        <section class="panel-section" id="edit">
-            <h2>Modifica costi — <?= tr_h($mesiIt[$editMonth]) ?> <?= $year ?></h2>
-            <form method="post" class="cost-form">
-                <input type="hidden" name="year"  value="<?= $year ?>">
-                <input type="hidden" name="month" value="<?= $editMonth ?>">
-                <div class="cost-grid">
-                    <label>Spese spedizione (€)
-                        <input type="text" name="spese_spedizione" value="<?= number_format((float)$c['spese_spedizione'], 2, '.', '') ?>">
-                    </label>
-                    <label>Spesa merce (€)
-                        <input type="text" name="spesa_merce" value="<?= number_format((float)$c['spesa_merce'], 2, '.', '') ?>">
-                    </label>
-                    <label>Spesa ads (€)
-                        <input type="text" name="spesa_ads" value="<?= number_format((float)$c['spesa_ads'], 2, '.', '') ?>">
-                    </label>
-                    <label>Spesa influencer / marketing (€)
-                        <input type="text" name="spesa_influencer" value="<?= number_format((float)$c['spesa_influencer'], 2, '.', '') ?>">
-                    </label>
-                    <label>Spesa team (€)
-                        <input type="text" name="spesa_team" value="<?= number_format((float)$c['spesa_team'], 2, '.', '') ?>">
-                    </label>
-                    <label>Spese varie (€)
-                        <input type="text" name="spese_varie" value="<?= number_format((float)$c['spese_varie'], 2, '.', '') ?>">
-                    </label>
-                    <label>Bonifici BRT (€) <small class="muted">(non sottratto dal margine)</small>
-                        <input type="text" name="bonifici_brt" value="<?= number_format((float)$c['bonifici_brt'], 2, '.', '') ?>">
-                    </label>
-                    <label style="grid-column: 1 / -1;">Note
-                        <textarea name="note" rows="2"><?= tr_h((string)($c['note'] ?? '')) ?></textarea>
-                    </label>
-                </div>
-                <div style="margin-top: 16px;">
-                    <button type="submit">Salva</button>
-                    <a href="?year=<?= $year ?>" class="btn-ghost">Annulla</a>
-                </div>
-            </form>
-        </section>
-    <?php endif; ?>
-
 </main>
+
+<script>
+// Auto-save inline costo prodotto on blur/Enter
+document.querySelectorAll('.inline-cost-form').forEach(form => {
+    const input = form.querySelector('.cost-input-inline');
+    let lastValue = input.value;
+
+    const save = async () => {
+        if (input.value === lastValue) return;
+        lastValue = input.value;
+        input.classList.add('saving');
+        try {
+            const fd = new FormData(form);
+            const r = await fetch('/costi.php', {
+                method: 'POST',
+                body: fd,
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            });
+            const j = await r.json();
+            if (j.ok) {
+                input.classList.remove('saving');
+                input.classList.add('saved');
+                setTimeout(() => input.classList.remove('saved'), 1200);
+            } else {
+                input.classList.remove('saving');
+                input.classList.add('error');
+            }
+        } catch (e) {
+            input.classList.remove('saving');
+            input.classList.add('error');
+        }
+    };
+
+    input.addEventListener('blur', save);
+    input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    });
+});
+</script>
+
 </body>
 </html>

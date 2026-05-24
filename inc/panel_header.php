@@ -12,6 +12,7 @@ $panel_active = $panel_active ?? '';
         <a href="/ordini.php"      class="panel-link <?= $panel_active==='ordini' ? 'active' : '' ?>">Ordini</a>
         <a href="/statistiche.php" class="panel-link <?= $panel_active==='statistiche' ? 'active' : '' ?>">Statistiche</a>
         <a href="/costi.php"       class="panel-link <?= $panel_active==='costi' ? 'active' : '' ?>">Costi</a>
+        <a href="/bilancio.php"    class="panel-link <?= $panel_active==='bilancio' ? 'active' : '' ?>">Bilancio</a>
     </nav>
     <div class="user-info">
         <span><?= date('d M H:i') ?></span>

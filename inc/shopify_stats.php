@@ -263,6 +263,92 @@ function sh_costs_month_total(array $c): float {
          + (float)($c['spese_varie'] ?? 0);
 }
 
+/**
+ * Catalogo prodotti con aggregato volume/ordini (da line_items) e costo unitario.
+ * $search filtra per titolo.
+ */
+function sh_products_catalog(string $search = ''): array {
+    $pdo = tracker_db();
+    $sql = "
+        SELECT
+            p.id,
+            p.title,
+            p.handle,
+            p.status,
+            p.image_url,
+            p.cost_unit,
+            COALESCE(SUM(li.quantity), 0)        AS volume,
+            COUNT(DISTINCT li.order_id)          AS ordini
+        FROM shopify_products p
+        LEFT JOIN shopify_order_items li ON li.product_id = p.id
+        WHERE 1=1
+    ";
+    $params = [];
+    if ($search !== '') {
+        $sql .= " AND (p.title LIKE :q OR p.handle LIKE :q)";
+        $params[':q'] = '%' . $search . '%';
+    }
+    $sql .= " GROUP BY p.id ORDER BY volume DESC, p.title ASC";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    return $stmt->fetchAll() ?: [];
+}
+
+function sh_product_cost_set(int $productId, float $cost): void {
+    tracker_db()->prepare("UPDATE shopify_products SET cost_unit = :c WHERE id = :id")
+        ->execute([':c' => $cost, ':id' => $productId]);
+}
+
+/**
+ * KPI logistici COGS: numero ordini per stato e costi totali stimati.
+ */
+function sh_cogs_kpi(int $from, int $to, array $unitCosts): array {
+    $pdo = tracker_db();
+    $stmt = $pdo->prepare("
+        SELECT
+            SUM(CASE WHEN fulfillment_status = 'fulfilled' AND is_returned = 0 AND cancelled_at IS NULL THEN 1 ELSE 0 END) AS n_spediti,
+            SUM(CASE WHEN is_returned = 1 THEN 1 ELSE 0 END) AS n_rientrati,
+            SUM(CASE WHEN (fulfillment_status IS NULL OR fulfillment_status = '' OR fulfillment_status = 'partial') AND is_returned = 0 AND cancelled_at IS NULL THEN 1 ELSE 0 END) AS n_giacenza
+        FROM shopify_orders
+        WHERE created_at BETWEEN :from AND :to
+    ");
+    $stmt->execute([':from' => $from, ':to' => $to]);
+    $row = $stmt->fetch() ?: ['n_spediti' => 0, 'n_rientrati' => 0, 'n_giacenza' => 0];
+
+    $row['cost_shipping']  = (float)$unitCosts['shipping'] * (int)$row['n_spediti'];
+    $row['cost_return']    = (float)$unitCosts['return']   * (int)$row['n_rientrati'];
+    $row['cost_stock']     = (float)$unitCosts['stock']    * (int)$row['n_giacenza'];
+    $row['cost_logistics'] = $row['cost_shipping'] + $row['cost_return'] + $row['cost_stock'];
+
+    // COGS prodotto: somma qty * cost_unit per ordini nel periodo
+    $stmt2 = $pdo->prepare("
+        SELECT COALESCE(SUM(li.quantity * COALESCE(p.cost_unit, 0)), 0) AS cogs_prodotto
+        FROM shopify_order_items li
+        JOIN shopify_orders o ON o.id = li.order_id
+        LEFT JOIN shopify_products p ON p.id = li.product_id
+        WHERE o.created_at BETWEEN :from AND :to
+          AND o.cancelled_at IS NULL
+    ");
+    $stmt2->execute([':from' => $from, ':to' => $to]);
+    $row['cogs_prodotto'] = (float)$stmt2->fetchColumn();
+
+    return $row;
+}
+
+function sh_cogs_unit_costs(): array {
+    return [
+        'shipping' => (float)(sh_setting_get('cogs_shipping_per_order') ?? 0),
+        'return'   => (float)(sh_setting_get('cogs_return_per_order') ?? 0),
+        'stock'    => (float)(sh_setting_get('cogs_stock_per_order') ?? 0),
+    ];
+}
+
+function sh_cogs_unit_costs_set(float $shipping, float $return, float $stock): void {
+    sh_setting_set('cogs_shipping_per_order', (string)$shipping);
+    sh_setting_set('cogs_return_per_order',   (string)$return);
+    sh_setting_set('cogs_stock_per_order',    (string)$stock);
+}
+
 function sh_revenue_for_month(int $year, int $month): array {
     $pdo = tracker_db();
     $from = mktime(0, 0, 0, $month, 1, $year);

@@ -96,6 +96,7 @@ $creativesD = tr_distinct('utm_content');
         <a href="/ordini.php"      class="panel-link">Ordini</a>
         <a href="/statistiche.php" class="panel-link">Statistiche</a>
         <a href="/costi.php"       class="panel-link">Costi</a>
+        <a href="/bilancio.php"    class="panel-link">Bilancio</a>
     </nav>
     <div class="user-info">
         <span>● LIVE</span>
