@@ -32,15 +32,35 @@ switch ($preset) {
     default:          $from = $now - 30 * 86400; $to = $now;
 }
 
-$kpi      = sh_kpi($from, $to);
-$trend    = sh_daily_trend($from, $to);
-$monthly  = sh_monthly_trend();
-$topCit   = sh_top_cities($from, $to, 10);
+$unitCosts = sh_cogs_unit_costs();
+$pnl       = sh_pnl_period($from, $to, $unitCosts);
+$mktg      = sh_marketing_costs_period($from, $to);
+$kpiBase   = sh_kpi($from, $to);
+$dailyP    = sh_daily_profit_trend($from, $to, $unitCosts);
+$topBundles = sh_top_variants_period($from, $to, 15);
+$topCit    = sh_top_cities($from, $to, 10);
+$monthly   = sh_monthly_trend();
 
-$maxFatturatoTrend = 0;
-foreach ($trend as $r) $maxFatturatoTrend = max($maxFatturatoTrend, (float)$r['fatturato']);
-$maxOrdiniTrend = 0;
-foreach ($trend as $r) $maxOrdiniTrend = max($maxOrdiniTrend, (int)$r['n']);
+// KPI calcolati
+$n            = (int)$pnl['n'];
+$revenue      = (float)$pnl['revenue'];
+$cogsBundle   = (float)$pnl['cogs_bundle'];
+$cogsShipping = (float)$pnl['cogs_shipping'];
+$cogsLoss     = (float)$pnl['cogs_loss'];
+$grossMargin  = (float)$pnl['margin'];           // dopo COGS
+
+$adsSpend     = (float)$mktg['ads'];
+$opSpend      = (float)$mktg['tot_op'];          // ads + team + influencer + varie
+$netProfit    = $grossMargin - $opSpend;          // profitto netto post-marketing
+
+$aov          = $n > 0 ? ($revenue / $n) : 0;
+$cpa          = $n > 0 && $adsSpend > 0 ? ($adsSpend / $n) : 0;
+$roas         = $adsSpend > 0 ? ($revenue / $adsSpend) : 0;
+$marginPct    = $revenue > 0 ? ($grossMargin / $revenue) * 100 : 0;
+$netPct       = $revenue > 0 ? ($netProfit / $revenue) * 100 : 0;
+$cogsPct      = $revenue > 0 ? (($cogsBundle + $cogsShipping + $cogsLoss) / $revenue) * 100 : 0;
+
+$maxRev = 0; foreach ($dailyP as $r) $maxRev = max($maxRev, (float)$r['revenue']);
 
 $panel_active = 'statistiche';
 ?>
@@ -66,70 +86,150 @@ $panel_active = 'statistiche';
         </div>
     </form>
 
+    <!-- ROW 1 — KPI principali profitto -->
     <section class="kpi-grid">
         <div class="kpi">
-            <div class="kpi-label">Ordini</div>
-            <div class="kpi-value"><?= number_format((int)$kpi['n'], 0, ',', '.') ?></div>
-            <div class="kpi-sub"><?= number_format((int)$kpi['n_cod'], 0, ',', '.') ?> COD · <?= number_format((int)$kpi['n_prepaid'], 0, ',', '.') ?> Prepaid</div>
+            <div class="kpi-label">Ordini generati</div>
+            <div class="kpi-value"><?= number_format($n, 0, ',', '.') ?></div>
+            <div class="kpi-sub">AOV € <?= number_format($aov, 2, ',', '.') ?></div>
         </div>
         <div class="kpi">
-            <div class="kpi-label">Fatturato lordo</div>
-            <div class="kpi-value">€ <?= number_format((float)$kpi['lordo'], 2, ',', '.') ?></div>
-            <div class="kpi-sub">- € <?= number_format((float)$kpi['sconti'], 2, ',', '.') ?> sconti</div>
+            <div class="kpi-label">Ricavo (post resi)</div>
+            <div class="kpi-value" style="color: var(--pos);">€ <?= number_format($revenue, 2, ',', '.') ?></div>
+            <div class="kpi-sub">lordo: € <?= number_format((float)$kpiBase['lordo'], 2, ',', '.') ?></div>
         </div>
         <div class="kpi">
-            <div class="kpi-label">Fatturato netto (post resi)</div>
-            <div class="kpi-value" style="color: var(--pos);">€ <?= number_format((float)$kpi['netto_dopo_resi'], 2, ',', '.') ?></div>
-            <div class="kpi-sub">resi: € <?= number_format((float)$kpi['resi_importo'], 2, ',', '.') ?> (<?= (int)$kpi['resi_n'] ?> ordini)</div>
+            <div class="kpi-label">COGS totali</div>
+            <div class="kpi-value">€ <?= number_format($cogsBundle + $cogsShipping + $cogsLoss, 2, ',', '.') ?></div>
+            <div class="kpi-sub"><?= number_format($cogsPct, 1, ',', '.') ?>% del ricavo</div>
         </div>
         <div class="kpi">
-            <div class="kpi-label">Tasso consegna COD</div>
-            <div class="kpi-value" style="color: var(--cyan);"><?= number_format(((float)$kpi['cod_tasso']) * 100, 1, ',', '.') ?>%</div>
-            <div class="kpi-sub"><?= (int)$kpi['cod_consegnati'] ?> consegnati · <?= (int)$kpi['cod_persi'] ?> persi su <?= (int)$kpi['n_cod'] ?></div>
+            <div class="kpi-label">Margine lordo</div>
+            <div class="kpi-value" style="color: <?= $grossMargin >= 0 ? 'var(--pos)' : 'var(--neg)' ?>;">€ <?= number_format($grossMargin, 2, ',', '.') ?></div>
+            <div class="kpi-sub"><?= number_format($marginPct, 1, ',', '.') ?>% (post-COGS)</div>
         </div>
     </section>
 
+    <!-- ROW 2 — KPI marketing -->
     <section class="kpi-grid" style="margin-top: 16px;">
         <div class="kpi">
-            <div class="kpi-label">Fatturato COD</div>
-            <div class="kpi-value">€ <?= number_format((float)$kpi['fatturato_cod'], 2, ',', '.') ?></div>
+            <div class="kpi-label">Spesa Ads</div>
+            <div class="kpi-value" style="color: var(--pink);">€ <?= number_format($adsSpend, 2, ',', '.') ?></div>
+            <div class="kpi-sub">pro-rata dal <a href="/bilancio.php" style="color: var(--accent-2);">Bilancio</a></div>
         </div>
         <div class="kpi">
-            <div class="kpi-label">Fatturato Prepaid</div>
-            <div class="kpi-value">€ <?= number_format((float)$kpi['fatturato_prepaid'], 2, ',', '.') ?></div>
+            <div class="kpi-label">CPA <small class="muted">(costo per ordine)</small></div>
+            <div class="kpi-value" style="color: <?= ($cpa > 0 && $cpa < $aov) ? 'var(--pos)' : 'var(--warn)' ?>;">
+                <?= $cpa > 0 ? '€ ' . number_format($cpa, 2, ',', '.') : '—' ?>
+            </div>
+            <div class="kpi-sub"><?= $cpa > 0 ? number_format(($cpa / max(1, $aov)) * 100, 1, ',', '.') . '% AOV' : 'imposta Ads in Bilancio' ?></div>
         </div>
         <div class="kpi">
-            <div class="kpi-label">Rientrati in magazzino</div>
-            <div class="kpi-value" style="color: var(--warn);"><?= (int)$kpi['n_rientrati'] ?></div>
+            <div class="kpi-label">ROAS</div>
+            <div class="kpi-value" style="color: <?= $roas >= 2 ? 'var(--pos)' : ($roas >= 1 ? 'var(--warn)' : 'var(--neg)') ?>;">
+                <?= $roas > 0 ? number_format($roas, 2, ',', '.') . 'x' : '—' ?>
+            </div>
+            <div class="kpi-sub"><?= $roas > 0 ? 'Ricavo / Ads' : 'imposta Ads in Bilancio' ?></div>
         </div>
         <div class="kpi">
-            <div class="kpi-label">Cancellati</div>
-            <div class="kpi-value" style="color: var(--neg);"><?= (int)$kpi['n_cancellati'] ?></div>
+            <div class="kpi-label">Profitto NETTO</div>
+            <div class="kpi-value" style="color: <?= $netProfit >= 0 ? 'var(--pos)' : 'var(--neg)' ?>;">€ <?= number_format($netProfit, 2, ',', '.') ?></div>
+            <div class="kpi-sub"><?= number_format($netPct, 1, ',', '.') ?>% (post-Ads &amp; opex)</div>
         </div>
     </section>
 
+    <!-- ROW 3 — breakdown COGS -->
+    <section class="kpi-grid" style="margin-top: 16px;">
+        <div class="kpi">
+            <div class="kpi-label">COGS bundle (fornitore)</div>
+            <div class="kpi-value">€ <?= number_format($cogsBundle, 2, ',', '.') ?></div>
+            <div class="kpi-sub">somma costo varianti vendute</div>
+        </div>
+        <div class="kpi">
+            <div class="kpi-label">Costo spedizioni</div>
+            <div class="kpi-value">€ <?= number_format($cogsShipping, 2, ',', '.') ?></div>
+            <div class="kpi-sub">€ <?= number_format($unitCosts['shipping'], 2, ',', '.') ?>/ordine spedito</div>
+        </div>
+        <div class="kpi">
+            <div class="kpi-label">Perdite rientri</div>
+            <div class="kpi-value" style="color: var(--warn);">€ <?= number_format($cogsLoss, 2, ',', '.') ?></div>
+            <div class="kpi-sub"><?= (int)$kpiBase['n_rientrati'] ?> ordini rientrati</div>
+        </div>
+        <div class="kpi">
+            <div class="kpi-label">Cancellati / Rientri</div>
+            <div class="kpi-value"><?= (int)$kpiBase['n_cancellati'] ?> · <?= (int)$kpiBase['n_rientrati'] ?></div>
+            <div class="kpi-sub">cancellati · rientrati</div>
+        </div>
+    </section>
+
+    <!-- ROW 4 — Andamento profitto giornaliero -->
     <section class="panel-section">
-        <h2>Andamento giornaliero</h2>
+        <h2>Andamento giornaliero — Ricavo &amp; Margine</h2>
         <div class="bar-chart">
-            <?php foreach ($trend as $r): ?>
-                <?php
-                $pctFatt = $maxFatturatoTrend > 0 ? ((float)$r['fatturato'] / $maxFatturatoTrend) * 100 : 0;
-                $pctOrd  = $maxOrdiniTrend > 0 ? ((int)$r['n'] / $maxOrdiniTrend) * 100 : 0;
-                ?>
+            <?php foreach ($dailyP as $r): ?>
+                <?php $pct = $maxRev > 0 ? ((float)$r['revenue'] / $maxRev) * 100 : 0; ?>
                 <div class="bar-row">
                     <div class="bar-label"><?= tr_h(date('d/m', strtotime($r['giorno']))) ?></div>
                     <div class="bar-track">
-                        <div class="bar-fill" style="width: <?= round($pctFatt, 2) ?>%;"></div>
+                        <div class="bar-fill" style="width: <?= round($pct, 2) ?>%;"></div>
                     </div>
                     <div class="bar-value">
-                        € <?= number_format((float)$r['fatturato'], 0, ',', '.') ?>
+                        € <?= number_format((float)$r['revenue'], 0, ',', '.') ?>
+                        · <span style="color: <?= $r['margin'] >= 0 ? 'var(--pos)' : 'var(--neg)' ?>;">€ <?= number_format((float)$r['margin'], 0, ',', '.') ?></span>
                         <span class="muted"><?= (int)$r['n'] ?> ord.</span>
                     </div>
                 </div>
             <?php endforeach; ?>
-            <?php if (empty($trend)): ?>
-                <p class="muted">Nessun dato nel periodo selezionato.</p>
+            <?php if (empty($dailyP)): ?>
+                <p class="muted">Nessun dato nel periodo.</p>
             <?php endif; ?>
+        </div>
+    </section>
+
+    <!-- ROW 5 — Top bundle venduti -->
+    <section class="panel-section">
+        <h2>Top bundle venduti</h2>
+        <div class="panel-table-wrap">
+            <table class="panel-table">
+                <thead>
+                    <tr>
+                        <th>Prodotto / Bundle</th>
+                        <th class="num">Pezzi</th>
+                        <th class="num">Ordini</th>
+                        <th class="num">Prezzo</th>
+                        <th class="num">Costo</th>
+                        <th class="num">Ricavo</th>
+                        <th class="num">COGS</th>
+                        <th class="num">Margine</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($topBundles as $b):
+                    $margin = (float)$b['ricavo'] - (float)$b['cogs'];
+                    $vt = trim((string)$b['variant_title']);
+                    $isDefault = $vt === '' || strtolower($vt) === 'default title';
+                ?>
+                    <tr>
+                        <td>
+                            <strong><?= tr_h($b['product_title']) ?></strong>
+                            <?php if (!$isDefault): ?><br><small class="muted">└ <?= tr_h($vt) ?></small><?php endif; ?>
+                        </td>
+                        <td class="num" style="color: var(--cyan);"><?= (int)$b['pezzi'] ?></td>
+                        <td class="num"><?= (int)$b['ordini'] ?></td>
+                        <td class="num">€ <?= number_format((float)$b['price'], 2, ',', '.') ?></td>
+                        <td class="num">€ <?= number_format((float)$b['cost_unit'], 2, ',', '.') ?></td>
+                        <td class="num">€ <?= number_format((float)$b['ricavo'], 2, ',', '.') ?></td>
+                        <td class="num">€ <?= number_format((float)$b['cogs'], 2, ',', '.') ?></td>
+                        <td class="num" style="color: <?= $margin >= 0 ? 'var(--pos)' : 'var(--neg)' ?>; font-weight: 700;">
+                            € <?= number_format($margin, 2, ',', '.') ?>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                <?php if (empty($topBundles)): ?>
+                    <tr><td colspan="8" class="muted" style="text-align:center; padding: 30px;">Nessun bundle venduto nel periodo.</td></tr>
+                <?php endif; ?>
+                </tbody>
+            </table>
         </div>
     </section>
 
@@ -137,7 +237,7 @@ $panel_active = 'statistiche';
         <section class="panel-section">
             <h2>Top città</h2>
             <table class="panel-table">
-                <thead><tr><th>Città</th><th class="num">Ordini</th><th class="num">Fatturato</th></tr></thead>
+                <thead><tr><th>Città</th><th class="num">Ordini</th><th class="num">Ricavo</th></tr></thead>
                 <tbody>
                 <?php foreach ($topCit as $c): ?>
                     <tr>
@@ -156,7 +256,7 @@ $panel_active = 'statistiche';
         <section class="panel-section">
             <h2>Andamento mensile</h2>
             <table class="panel-table">
-                <thead><tr><th>Mese</th><th class="num">Ordini</th><th class="num">Fatturato</th><th class="num">Netto</th><th class="num">COD</th><th class="num">Cancellati</th></tr></thead>
+                <thead><tr><th>Mese</th><th class="num">Ordini</th><th class="num">Ricavo</th><th class="num">Netto resi</th></tr></thead>
                 <tbody>
                 <?php foreach (array_reverse($monthly) as $m): ?>
                     <tr>
@@ -164,12 +264,10 @@ $panel_active = 'statistiche';
                         <td class="num"><?= (int)$m['n'] ?></td>
                         <td class="num">€ <?= number_format((float)$m['fatturato'], 2, ',', '.') ?></td>
                         <td class="num">€ <?= number_format((float)$m['netto'], 2, ',', '.') ?></td>
-                        <td class="num"><?= (int)$m['n_cod'] ?></td>
-                        <td class="num"><?= (int)$m['n_cancellati'] ?></td>
                     </tr>
                 <?php endforeach; ?>
                 <?php if (empty($monthly)): ?>
-                    <tr><td colspan="6" class="muted">Nessun dato.</td></tr>
+                    <tr><td colspan="4" class="muted">Nessun dato.</td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>

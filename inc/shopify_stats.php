@@ -65,6 +65,73 @@ function sh_kpi(int $from, int $to): array {
     return $row;
 }
 
+/**
+ * Top bundle/varianti vendute nel periodo con ricavo/COGS/margine
+ */
+function sh_top_variants_period(int $from, int $to, int $limit = 20): array {
+    $pdo = tracker_db();
+    $stmt = $pdo->prepare("
+        SELECT
+            v.id           AS variant_id,
+            p.title        AS product_title,
+            v.title        AS variant_title,
+            v.price        AS price,
+            v.cost_unit    AS cost_unit,
+            COUNT(DISTINCT o.id)          AS ordini,
+            COALESCE(SUM(li.quantity), 0) AS pezzi,
+            COALESCE(SUM(li.quantity * li.price), 0)       AS ricavo,
+            COALESCE(SUM(li.quantity * v.cost_unit), 0)    AS cogs
+        FROM shopify_order_items li
+        JOIN shopify_orders o ON o.id = li.order_id
+        JOIN shopify_variants v ON v.id = li.variant_id
+        JOIN shopify_products p ON p.id = v.product_id
+        WHERE o.created_at BETWEEN :from AND :to
+          AND o.cancelled_at IS NULL
+        GROUP BY v.id
+        ORDER BY pezzi DESC
+        LIMIT :lim
+    ");
+    $stmt->bindValue(':from', $from, PDO::PARAM_INT);
+    $stmt->bindValue(':to',   $to,   PDO::PARAM_INT);
+    $stmt->bindValue(':lim',  $limit, PDO::PARAM_INT);
+    $stmt->execute();
+    return $stmt->fetchAll() ?: [];
+}
+
+/**
+ * Andamento giornaliero con profitto netto.
+ */
+function sh_daily_profit_trend(int $from, int $to, array $unitCosts): array {
+    $pdo = tracker_db();
+    $stmt = $pdo->prepare("SELECT * FROM shopify_orders WHERE created_at BETWEEN :from AND :to");
+    $stmt->execute([':from' => $from, ':to' => $to]);
+    $orders = $stmt->fetchAll() ?: [];
+    if (empty($orders)) return [];
+
+    $ids = array_map(fn($o) => (int)$o['id'], $orders);
+    $place = implode(',', array_fill(0, count($ids), '?'));
+    $stmt2 = $pdo->prepare("SELECT * FROM shopify_order_items WHERE order_id IN ($place)");
+    $stmt2->execute($ids);
+    $itemsMap = [];
+    foreach ($stmt2->fetchAll() ?: [] as $li) $itemsMap[(int)$li['order_id']][] = $li;
+
+    $costMap = sh_variant_cost_map();
+    $byDay = [];
+    foreach ($orders as $o) {
+        $pnl = sh_order_pnl($o, $itemsMap[(int)$o['id']] ?? [], $unitCosts, $costMap);
+        $day = date('Y-m-d', (int)$o['created_at']);
+        if (!isset($byDay[$day])) {
+            $byDay[$day] = ['giorno' => $day, 'n' => 0, 'revenue' => 0, 'cogs' => 0, 'margin' => 0];
+        }
+        $byDay[$day]['n']++;
+        $byDay[$day]['revenue'] += $pnl['revenue'];
+        $byDay[$day]['cogs']    += $pnl['cost_total'];
+        $byDay[$day]['margin']  += $pnl['margin'];
+    }
+    ksort($byDay);
+    return array_values($byDay);
+}
+
 function sh_daily_trend(int $from, int $to): array {
     $pdo = tracker_db();
     $stmt = $pdo->prepare("
@@ -480,6 +547,51 @@ function sh_pnl_period(int $from, int $to, array $unitCosts): array {
         $tot['n']++;
     }
     return $tot;
+}
+
+/**
+ * Spese marketing/operative pro-rata per il periodo $from..$to.
+ * Per ogni mese del periodo prende le voci da shopify_costs e le scala
+ * per la frazione di giorni effettivamente coperti.
+ *
+ * Restituisce ['ads', 'team', 'influencer', 'varie', 'spedizione', 'merce', 'tot_op']
+ * dove tot_op = team + influencer + varie + ads (no spedizione/merce: già nei COGS).
+ */
+function sh_marketing_costs_period(int $from, int $to): array {
+    $pdo = tracker_db();
+    $out = ['ads' => 0, 'team' => 0, 'influencer' => 0, 'varie' => 0, 'spedizione' => 0, 'merce' => 0, 'brt' => 0];
+
+    if ($from <= 0) $from = 1;
+    $cursor = strtotime(date('Y-m-01', $from));
+    $endTs  = $to;
+
+    while ($cursor <= $endTs) {
+        $y = (int)date('Y', $cursor);
+        $m = (int)date('n', $cursor);
+        $monthStart = mktime(0, 0, 0, $m, 1, $y);
+        $monthEnd   = mktime(0, 0, -1, $m + 1, 1, $y);
+        $daysInMonth = (int)date('t', $monthStart);
+
+        $overlapStart = max($monthStart, $from);
+        $overlapEnd   = min($monthEnd, $endTs);
+        $overlapDays  = max(0, (int)floor(($overlapEnd - $overlapStart) / 86400) + 1);
+        $frac = $daysInMonth > 0 ? ($overlapDays / $daysInMonth) : 0;
+
+        $c = sh_costs_for_month($y, $m);
+        $out['ads']        += (float)$c['spesa_ads']         * $frac;
+        $out['team']       += (float)$c['spesa_team']        * $frac;
+        $out['influencer'] += (float)$c['spesa_influencer']  * $frac;
+        $out['varie']      += (float)$c['spese_varie']       * $frac;
+        $out['spedizione'] += (float)$c['spese_spedizione']  * $frac;
+        $out['merce']      += (float)$c['spesa_merce']       * $frac;
+        $out['brt']        += (float)$c['bonifici_brt']      * $frac;
+
+        // Vai al primo del mese successivo
+        $cursor = strtotime(date('Y-m-01', strtotime('+1 month', $monthStart)));
+    }
+
+    $out['tot_op'] = $out['ads'] + $out['team'] + $out['influencer'] + $out['varie'];
+    return $out;
 }
 
 function sh_revenue_for_month(int $year, int $month): array {
