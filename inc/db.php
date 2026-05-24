@@ -164,4 +164,65 @@ function tracker_install_schema(): void {
         );
     ");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_track_logs_ts ON track_logs(ts DESC);");
+
+    // ─── Pannello gestionale Shopify (separato dal funnel tracker) ────────
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS shopify_orders (
+            id INTEGER PRIMARY KEY,
+            order_number TEXT,
+            name TEXT,
+            email TEXT,
+            phone TEXT,
+            customer_first_name TEXT,
+            customer_last_name TEXT,
+            created_at INTEGER,
+            cancelled_at INTEGER,
+            closed_at INTEGER,
+            financial_status TEXT,
+            fulfillment_status TEXT,
+            subtotal_price REAL,
+            total_price REAL,
+            total_line_items_price REAL,
+            total_discounts REAL,
+            total_tax REAL,
+            total_shipping REAL,
+            current_total_price REAL,
+            currency TEXT,
+            payment_gateway_names TEXT,
+            is_cod INTEGER DEFAULT 0,
+            shipping_city TEXT,
+            shipping_province TEXT,
+            shipping_country TEXT,
+            shipping_zip TEXT,
+            tags TEXT,
+            is_returned INTEGER DEFAULT 0,
+            line_items_json TEXT,
+            raw_json TEXT,
+            synced_at INTEGER NOT NULL,
+            shop_updated_at INTEGER
+        );
+    ");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_so_created ON shopify_orders(created_at);");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_so_cod ON shopify_orders(is_cod);");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_so_financial ON shopify_orders(financial_status);");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_so_fulfillment ON shopify_orders(fulfillment_status);");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_so_cancelled ON shopify_orders(cancelled_at);");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_so_returned ON shopify_orders(is_returned);");
+
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS shopify_costs (
+            year INTEGER NOT NULL,
+            month INTEGER NOT NULL,
+            spese_spedizione REAL DEFAULT 0,
+            spesa_merce REAL DEFAULT 0,
+            spesa_ads REAL DEFAULT 0,
+            spesa_influencer REAL DEFAULT 0,
+            spesa_team REAL DEFAULT 0,
+            spese_varie REAL DEFAULT 0,
+            bonifici_brt REAL DEFAULT 0,
+            note TEXT,
+            updated_at INTEGER,
+            PRIMARY KEY (year, month)
+        );
+    ");
 }
