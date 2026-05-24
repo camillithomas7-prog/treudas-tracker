@@ -28,18 +28,17 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $return   = (float)str_replace(',', '.', (string)($_POST['return']   ?? 0));
         sh_cogs_unit_costs_set($shipping, $return, 0); // stock non usato in drop shipping
         $msg = '✔ Costi logistici aggiornati.';
-    } elseif ($action === 'product_cost') {
-        $pid  = (int)($_POST['product_id'] ?? 0);
+    } elseif ($action === 'variant_cost') {
+        $vid  = (int)($_POST['variant_id'] ?? 0);
         $cost = (float)str_replace(',', '.', (string)($_POST['cost'] ?? 0));
-        if ($pid > 0) {
-            sh_product_cost_set($pid, $cost);
-            // AJAX support: rispondi JSON se richiesto
+        if ($vid > 0) {
+            sh_variant_cost_set($vid, $cost);
             if (($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'XMLHttpRequest') {
                 header('Content-Type: application/json');
-                echo json_encode(['ok' => true, 'product_id' => $pid, 'cost' => $cost]);
+                echo json_encode(['ok' => true, 'variant_id' => $vid, 'cost' => $cost]);
                 exit;
             }
-            $msg = sprintf('✔ Costo prodotto #%d aggiornato a € %s.', $pid, number_format($cost, 2, ',', '.'));
+            $msg = sprintf('✔ Costo bundle #%d aggiornato a € %s.', $vid, number_format($cost, 2, ',', '.'));
         }
     } elseif ($action === 'sync_products') {
         $r = sh_sync_products();
@@ -52,7 +51,7 @@ sh_sync_products_throttled(600);
 sh_sync_orders_throttled(60);
 
 $search = trim((string)($_GET['q'] ?? ''));
-$products = sh_products_catalog($search);
+$variants = sh_variants_catalog($search);
 
 $unitCosts = sh_cogs_unit_costs();
 
@@ -163,23 +162,23 @@ $panel_active = 'costi';
         </p>
     </div>
 
-    <!-- Catalogo prodotti -->
+    <!-- Catalogo bundle / varianti -->
     <section class="panel-section">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
             <div>
-                <h2 style="margin: 0;">● Catalogo prodotti <span class="muted" style="font-weight: 400; font-size: 14px;">— <?= count($products) ?> configurati</span></h2>
+                <h2 style="margin: 0;">● Catalogo bundle / offerte <span class="muted" style="font-weight: 400; font-size: 14px;">— <?= count($variants) ?> configurati</span></h2>
                 <?php if ($lastProductsSync): ?>
-                    <small class="muted">Ultimo sync prodotti: <?= tr_h(date('d/m H:i', $lastProductsSync)) ?></small>
+                    <small class="muted">Ultimo sync: <?= tr_h(date('d/m H:i', $lastProductsSync)) ?> · ogni variante Shopify = un bundle separato</small>
                 <?php endif; ?>
             </div>
             <div style="display: flex; gap: 10px; align-items: center;">
                 <form method="get" style="margin: 0;">
                     <input type="hidden" name="range" value="<?= tr_h($preset) ?>">
-                    <input type="text" name="q" value="<?= tr_h($search) ?>" placeholder="Cerca prodotto…" style="background: rgba(20,28,56,0.6); border: 1px solid var(--glass-border); color: var(--text); padding: 8px 14px; border-radius: 8px; font-size: 13px;">
+                    <input type="text" name="q" value="<?= tr_h($search) ?>" placeholder="Cerca bundle / SKU…" style="background: rgba(20,28,56,0.6); border: 1px solid var(--glass-border); color: var(--text); padding: 8px 14px; border-radius: 8px; font-size: 13px;">
                 </form>
                 <form method="post" style="margin: 0;">
                     <input type="hidden" name="action" value="sync_products">
-                    <button type="submit" class="btn-sm">↻ Sync prodotti</button>
+                    <button type="submit" class="btn-sm">↻ Sync catalogo</button>
                 </form>
             </div>
         </div>
@@ -188,30 +187,47 @@ $panel_active = 'costi';
             <table class="panel-table">
                 <thead>
                     <tr>
-                        <th>Bundle / Offerta</th>
+                        <th>Prodotto / Bundle</th>
+                        <th>SKU</th>
+                        <th class="num">Prezzo (€)</th>
                         <th class="num">Volume (pz)</th>
                         <th class="num">Ordini</th>
-                        <th class="num">Costo bundle (€)</th>
+                        <th class="num">Costo nostro (€)</th>
+                        <th class="num">Margine unitario</th>
                     </tr>
                 </thead>
                 <tbody>
-                <?php if (empty($products)): ?>
-                    <tr><td colspan="4" class="muted" style="text-align: center; padding: 30px;">Nessun prodotto. Clicca "↻ Sync prodotti".</td></tr>
-                <?php else: foreach ($products as $p): ?>
-                    <tr>
+                <?php if (empty($variants)): ?>
+                    <tr><td colspan="7" class="muted" style="text-align: center; padding: 30px;">Nessun bundle. Clicca "↻ Sync catalogo".</td></tr>
+                <?php else:
+                    $lastProductId = null;
+                    foreach ($variants as $v):
+                        $marginUnit = (float)$v['price'] - (float)$v['cost_unit'];
+                        $rowIsFirstOfProduct = $lastProductId !== (int)$v['product_id'];
+                        $lastProductId = (int)$v['product_id'];
+                ?>
+                    <tr class="<?= $rowIsFirstOfProduct ? 'row-product-start' : '' ?>">
                         <td>
-                            <?= tr_h($p['title']) ?>
-                            <?php if ($p['status'] === 'draft'): ?><span class="badge" style="margin-left: 8px;">Draft</span><?php endif; ?>
-                            <?php if ($p['status'] === 'archived'): ?><span class="badge" style="margin-left: 8px;">Archived</span><?php endif; ?>
+                            <?php if ($rowIsFirstOfProduct): ?>
+                                <strong><?= tr_h($v['product_title']) ?></strong>
+                                <?php if ($v['status'] === 'draft'): ?><span class="badge" style="margin-left: 8px;">Draft</span><?php endif; ?>
+                                <br>
+                            <?php endif; ?>
+                            <span class="muted" style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">└ <?= tr_h($v['variant_title']) ?: 'Default' ?></span>
                         </td>
-                        <td class="num" style="color: var(--cyan);"><?= number_format((int)$p['volume'], 0, ',', '.') ?></td>
-                        <td class="num"><?= number_format((int)$p['ordini'], 0, ',', '.') ?></td>
+                        <td><small class="muted"><?= tr_h($v['sku']) ?: '—' ?></small></td>
+                        <td class="num">€ <?= number_format((float)$v['price'], 2, ',', '.') ?></td>
+                        <td class="num" style="color: var(--cyan);"><?= number_format((int)$v['volume'], 0, ',', '.') ?></td>
+                        <td class="num"><?= number_format((int)$v['ordini'], 0, ',', '.') ?></td>
                         <td class="num">
-                            <form method="post" class="inline-cost-form" data-pid="<?= (int)$p['id'] ?>">
-                                <input type="hidden" name="action" value="product_cost">
-                                <input type="hidden" name="product_id" value="<?= (int)$p['id'] ?>">
-                                <input type="text" name="cost" value="<?= number_format((float)$p['cost_unit'], 2, '.', '') ?>" class="cost-input-inline">
+                            <form method="post" class="inline-cost-form" data-vid="<?= (int)$v['variant_id'] ?>">
+                                <input type="hidden" name="action" value="variant_cost">
+                                <input type="hidden" name="variant_id" value="<?= (int)$v['variant_id'] ?>">
+                                <input type="text" name="cost" value="<?= number_format((float)$v['cost_unit'], 2, '.', '') ?>" class="cost-input-inline">
                             </form>
+                        </td>
+                        <td class="num" style="color: <?= $marginUnit >= 0 ? 'var(--pos)' : 'var(--neg)' ?>;">
+                            € <?= number_format($marginUnit, 2, ',', '.') ?>
                         </td>
                     </tr>
                 <?php endforeach; endif; ?>
@@ -233,10 +249,9 @@ document.querySelectorAll('.inline-cost-form').forEach(form => {
         lastValue = input.value;
         input.classList.add('saving');
         try {
-            const fd = new FormData(form);
             const r = await fetch('/costi.php', {
                 method: 'POST',
-                body: fd,
+                body: new FormData(form),
                 headers: { 'X-Requested-With': 'XMLHttpRequest' },
             });
             const j = await r.json();

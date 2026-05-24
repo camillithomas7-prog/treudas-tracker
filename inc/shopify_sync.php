@@ -106,10 +106,13 @@ function sh_upsert_order_items(int $orderId, array $items): void {
 
 function sh_sync_products(): array {
     $start = microtime(true);
-    $url = sh_api_url('products.json', ['limit' => 250, 'fields' => 'id,title,handle,status,product_type,updated_at,image']);
+    // Senza 'fields' per avere variants[] complete
+    $url = sh_api_url('products.json', ['limit' => 250]);
     $total = 0;
+    $totalVariants = 0;
     $pdo = tracker_db();
-    $stmt = $pdo->prepare("
+
+    $stmtP = $pdo->prepare("
         INSERT INTO shopify_products (id, title, handle, status, product_type, image_url, synced_at, shop_updated_at)
         VALUES (:id, :title, :handle, :status, :ptype, :img, :synced, :shopupd)
         ON CONFLICT(id) DO UPDATE SET
@@ -120,6 +123,18 @@ function sh_sync_products(): array {
             image_url = excluded.image_url,
             synced_at = excluded.synced_at,
             shop_updated_at = excluded.shop_updated_at
+    ");
+
+    $stmtV = $pdo->prepare("
+        INSERT INTO shopify_variants (id, product_id, title, sku, price, position, synced_at)
+        VALUES (:id, :pid, :title, :sku, :price, :pos, :synced)
+        ON CONFLICT(id) DO UPDATE SET
+            product_id = excluded.product_id,
+            title = excluded.title,
+            sku = excluded.sku,
+            price = excluded.price,
+            position = excluded.position,
+            synced_at = excluded.synced_at
     ");
 
     while ($url) {
@@ -133,7 +148,7 @@ function sh_sync_products(): array {
             ];
         }
         foreach (($r['body']['products'] ?? []) as $p) {
-            $stmt->execute([
+            $stmtP->execute([
                 ':id'      => (int)$p['id'],
                 ':title'   => (string)($p['title'] ?? ''),
                 ':handle'  => (string)($p['handle'] ?? ''),
@@ -144,9 +159,23 @@ function sh_sync_products(): array {
                 ':shopupd' => isset($p['updated_at']) ? strtotime($p['updated_at']) : null,
             ]);
             $total++;
+
+            foreach (($p['variants'] ?? []) as $v) {
+                $stmtV->execute([
+                    ':id'     => (int)$v['id'],
+                    ':pid'    => (int)$p['id'],
+                    ':title'  => (string)($v['title'] ?? ''),
+                    ':sku'    => (string)($v['sku'] ?? ''),
+                    ':price'  => (float)($v['price'] ?? 0),
+                    ':pos'    => (int)($v['position'] ?? 0),
+                    ':synced' => time(),
+                ]);
+                $totalVariants++;
+            }
         }
         $url = $r['next_url'];
     }
+    sh_setting_set('shopify_variants_last_count', (string)$totalVariants);
 
     sh_setting_set('shopify_products_last_sync', (string)time());
     sh_setting_set('shopify_products_last_count', (string)$total);

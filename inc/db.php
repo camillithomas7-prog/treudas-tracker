@@ -250,6 +250,21 @@ function tracker_install_schema(): void {
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_sp_status ON shopify_products(status);");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_sp_title ON shopify_products(title);");
 
+    // Varianti / bundle (TREUDAS ha 1 prodotto con varie varianti = i bundle)
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS shopify_variants (
+            id INTEGER PRIMARY KEY,
+            product_id INTEGER NOT NULL,
+            title TEXT,
+            sku TEXT,
+            price REAL,
+            position INTEGER,
+            cost_unit REAL DEFAULT 0,
+            synced_at INTEGER
+        );
+    ");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_sv_product ON shopify_variants(product_id);");
+
     // Line items per ordine (per aggregare volume/ordini per prodotto e COGS per ordine)
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS shopify_order_items (

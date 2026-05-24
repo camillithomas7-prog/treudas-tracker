@@ -249,8 +249,17 @@ $panel_active = 'ordini';
                     </td>
                     <td><small><?= $o['created_at'] ? tr_h(date('d/m/Y', (int)$o['created_at'])) : '—' ?></small></td>
                     <td class="cell-products">
-                        <?php foreach ($items as $li): ?>
-                            <div><span class="qty">×<?= (int)$li['quantity'] ?></span> <?= tr_h($li['title']) ?></div>
+                        <?php foreach ($items as $li):
+                            $variantTitle = trim((string)$li['variant_title']);
+                            $isDefault = $variantTitle === '' || strtolower($variantTitle) === 'default title';
+                        ?>
+                            <div>
+                                <span class="qty">×<?= (int)$li['quantity'] ?></span>
+                                <?= tr_h($li['title']) ?>
+                                <?php if (!$isDefault): ?>
+                                    <span class="muted" style="font-size: 11px;">— <?= tr_h($variantTitle) ?></span>
+                                <?php endif; ?>
+                            </div>
                         <?php endforeach; ?>
                     </td>
                 </tr>

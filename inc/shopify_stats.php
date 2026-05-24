@@ -293,39 +293,52 @@ function sh_costs_month_total(array $c): float {
 }
 
 /**
- * Catalogo prodotti con aggregato volume/ordini (da line_items) e costo unitario.
- * $search filtra per titolo.
+ * Catalogo a livello VARIANTE / BUNDLE.
+ * In drop shipping ogni variante è un bundle distinto (es. "1 confezione",
+ * "2+1 omaggio", "3 al prezzo di 1") con un costo fornitore diverso.
+ * Aggrega volume/ordini per variant_id.
  */
-function sh_products_catalog(string $search = ''): array {
+function sh_variants_catalog(string $search = ''): array {
     $pdo = tracker_db();
     $sql = "
         SELECT
-            p.id,
-            p.title,
-            p.handle,
+            v.id              AS variant_id,
+            v.product_id,
+            v.title           AS variant_title,
+            v.sku,
+            v.price,
+            v.cost_unit,
+            p.title           AS product_title,
             p.status,
             p.image_url,
-            p.cost_unit,
             COALESCE(SUM(li.quantity), 0)        AS volume,
             COUNT(DISTINCT li.order_id)          AS ordini
-        FROM shopify_products p
-        LEFT JOIN shopify_order_items li ON li.product_id = p.id
+        FROM shopify_variants v
+        JOIN shopify_products p ON p.id = v.product_id
+        LEFT JOIN shopify_order_items li ON li.variant_id = v.id
         WHERE 1=1
     ";
     $params = [];
     if ($search !== '') {
-        $sql .= " AND (p.title LIKE :q OR p.handle LIKE :q)";
+        $sql .= " AND (v.title LIKE :q OR v.sku LIKE :q OR p.title LIKE :q)";
         $params[':q'] = '%' . $search . '%';
     }
-    $sql .= " GROUP BY p.id ORDER BY volume DESC, p.title ASC";
+    $sql .= " GROUP BY v.id ORDER BY volume DESC, p.title, v.position ASC";
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
     return $stmt->fetchAll() ?: [];
 }
 
-function sh_product_cost_set(int $productId, float $cost): void {
-    tracker_db()->prepare("UPDATE shopify_products SET cost_unit = :c WHERE id = :id")
-        ->execute([':c' => $cost, ':id' => $productId]);
+function sh_variant_cost_set(int $variantId, float $cost): void {
+    tracker_db()->prepare("UPDATE shopify_variants SET cost_unit = :c WHERE id = :id")
+        ->execute([':c' => $cost, ':id' => $variantId]);
+}
+
+function sh_variant_cost_map(): array {
+    $rows = tracker_db()->query("SELECT id, cost_unit FROM shopify_variants")->fetchAll();
+    $map = [];
+    foreach ($rows as $r) $map[(int)$r['id']] = (float)$r['cost_unit'];
+    return $map;
 }
 
 /**
@@ -349,12 +362,12 @@ function sh_cogs_kpi(int $from, int $to, array $unitCosts): array {
     $row['cost_stock']     = (float)$unitCosts['stock']    * (int)$row['n_giacenza'];
     $row['cost_logistics'] = $row['cost_shipping'] + $row['cost_return'] + $row['cost_stock'];
 
-    // COGS prodotto: somma qty * cost_unit per ordini nel periodo
+    // COGS bundle: somma qty * cost_unit della variante per ordini nel periodo (escluso cancellati)
     $stmt2 = $pdo->prepare("
-        SELECT COALESCE(SUM(li.quantity * COALESCE(p.cost_unit, 0)), 0) AS cogs_prodotto
+        SELECT COALESCE(SUM(li.quantity * COALESCE(v.cost_unit, 0)), 0) AS cogs_prodotto
         FROM shopify_order_items li
         JOIN shopify_orders o ON o.id = li.order_id
-        LEFT JOIN shopify_products p ON p.id = li.product_id
+        LEFT JOIN shopify_variants v ON v.id = li.variant_id
         WHERE o.created_at BETWEEN :from AND :to
           AND o.cancelled_at IS NULL
     ");
@@ -379,13 +392,10 @@ function sh_cogs_unit_costs_set(float $shipping, float $return, float $stock): v
 }
 
 /**
- * Mappa rapida product_id => cost_unit per evitare query in loop.
+ * @deprecated Mantenuto per retro-compat. Usare sh_variant_cost_map.
  */
 function sh_product_cost_map(): array {
-    $rows = tracker_db()->query("SELECT id, cost_unit FROM shopify_products")->fetchAll();
-    $map = [];
-    foreach ($rows as $r) $map[(int)$r['id']] = (float)$r['cost_unit'];
-    return $map;
+    return sh_variant_cost_map();
 }
 
 /**
@@ -399,15 +409,15 @@ function sh_product_cost_map(): array {
  *
  * $unitCosts = ['shipping' => €/ordine, 'return' => €/ordine rientrato]
  */
-function sh_order_pnl(array $order, array $items, array $unitCosts, array $productCostMap): array {
+function sh_order_pnl(array $order, array $items, array $unitCosts, array $variantCostMap): array {
     $cancelled = !empty($order['cancelled_at']);
     $returned  = (int)($order['is_returned'] ?? 0) === 1;
 
     $cogsBundle = 0.0;
     foreach ($items as $li) {
-        $pid  = (int)($li['product_id'] ?? 0);
+        $vid  = (int)($li['variant_id'] ?? 0);
         $qty  = (int)($li['quantity'] ?? 0);
-        $cu   = (float)($productCostMap[$pid] ?? 0);
+        $cu   = (float)($variantCostMap[$vid] ?? 0);
         $cogsBundle += $qty * $cu;
     }
 
@@ -457,7 +467,7 @@ function sh_pnl_period(int $from, int $to, array $unitCosts): array {
     $itemsMap = [];
     foreach ($itemsRows as $li) $itemsMap[(int)$li['order_id']][] = $li;
 
-    $costMap = sh_product_cost_map();
+    $costMap = sh_variant_cost_map();
     $tot = ['revenue'=>0, 'cogs_bundle'=>0, 'cogs_shipping'=>0, 'cogs_loss'=>0, 'cost_total'=>0, 'margin'=>0, 'n'=>0];
     foreach ($orders as $o) {
         $pnl = sh_order_pnl($o, $itemsMap[(int)$o['id']] ?? [], $unitCosts, $costMap);
