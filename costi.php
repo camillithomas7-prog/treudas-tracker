@@ -26,8 +26,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     if ($action === 'logistics') {
         $shipping = (float)str_replace(',', '.', (string)($_POST['shipping'] ?? 0));
         $return   = (float)str_replace(',', '.', (string)($_POST['return']   ?? 0));
-        $stock    = (float)str_replace(',', '.', (string)($_POST['stock']    ?? 0));
-        sh_cogs_unit_costs_set($shipping, $return, $stock);
+        sh_cogs_unit_costs_set($shipping, $return, 0); // stock non usato in drop shipping
         $msg = '✔ Costi logistici aggiornati.';
     } elseif ($action === 'product_cost') {
         $pid  = (int)($_POST['product_id'] ?? 0);
@@ -70,6 +69,7 @@ switch ($preset) {
     default:          $from = $now - 30 * 86400; $to = $now;
 }
 $cogsKpi = sh_cogs_kpi($from, $to, $unitCosts);
+$pnl = sh_pnl_period($from, $to, $unitCosts);
 
 $lastProductsSync = (int)(sh_setting_get('shopify_products_last_sync') ?? 0);
 
@@ -90,8 +90,8 @@ $panel_active = 'costi';
 <main class="container">
 
     <div class="page-title">
-        <h1>Costi & COGS</h1>
-        <p class="muted">Costo unitario per evasione, rientro, giacenza e catalogo prodotti</p>
+        <h1>Costi & COGS — Drop Shipping</h1>
+        <p class="muted">Costo spedizione, perdita su rientro e costo bundle per ogni offerta del catalogo</p>
     </div>
 
     <?php if ($msg): ?><div class="alert alert-ok"><?= tr_h($msg) ?></div><?php endif; ?>
@@ -105,47 +105,61 @@ $panel_active = 'costi';
         </div>
     </form>
 
-    <!-- KPI logistici editabili -->
-    <form method="post" class="cogs-kpi-row">
+    <!-- P&L riepilogo periodo -->
+    <section class="pnl-summary">
+        <div class="pnl-cell">
+            <div class="pnl-label">Ricavo</div>
+            <div class="pnl-value" style="color: var(--pos);">€ <?= number_format($pnl['revenue'], 2, ',', '.') ?></div>
+        </div>
+        <div class="pnl-cell">
+            <div class="pnl-label">Costo bundle (fornitore)</div>
+            <div class="pnl-value">€ <?= number_format($pnl['cogs_bundle'], 2, ',', '.') ?></div>
+        </div>
+        <div class="pnl-cell">
+            <div class="pnl-label">Costo spedizione</div>
+            <div class="pnl-value">€ <?= number_format($pnl['cogs_shipping'], 2, ',', '.') ?></div>
+        </div>
+        <div class="pnl-cell">
+            <div class="pnl-label">Perdita rientri</div>
+            <div class="pnl-value" style="color: var(--warn);">€ <?= number_format($pnl['cogs_loss'], 2, ',', '.') ?></div>
+        </div>
+        <div class="pnl-cell pnl-margin">
+            <div class="pnl-label">Margine lordo</div>
+            <div class="pnl-value" style="color: <?= $pnl['margin'] >= 0 ? 'var(--pos)' : 'var(--neg)' ?>;">€ <?= number_format($pnl['margin'], 2, ',', '.') ?></div>
+            <div class="pnl-sub"><?= (int)$pnl['n'] ?> ordini · <?= $pnl['revenue'] > 0 ? number_format(($pnl['margin'] / $pnl['revenue']) * 100, 1, ',', '.') : '0' ?>%</div>
+        </div>
+    </section>
+
+    <!-- KPI logistici editabili (2 in drop shipping: spedizione + perdita rientro) -->
+    <form method="post" class="cogs-kpi-row cogs-kpi-row-2">
         <input type="hidden" name="action" value="logistics">
 
         <div class="cogs-kpi cogs-kpi-cyan">
             <div class="cogs-kpi-label">● Spedizione</div>
             <input type="text" name="shipping" value="<?= number_format($unitCosts['shipping'], 2, '.', '') ?>" class="cogs-kpi-input">
-            <div class="cogs-kpi-sub">€/ordine — Pagata su ogni ordine spedito</div>
-            <div class="cogs-kpi-meta">applicato a <?= (int)$cogsKpi['n_spediti'] ?> ordini → € <?= number_format($cogsKpi['cost_shipping'], 2, ',', '.') ?></div>
+            <div class="cogs-kpi-sub">€/ordine — Pagata al fornitore su ogni ordine spedito al cliente</div>
+            <div class="cogs-kpi-meta">applicato a <?= (int)$cogsKpi['n_spediti'] ?> ordini consegnati → € <?= number_format($cogsKpi['cost_shipping'], 2, ',', '.') ?></div>
         </div>
 
         <div class="cogs-kpi cogs-kpi-orange">
-            <div class="cogs-kpi-label">● Rientro</div>
+            <div class="cogs-kpi-label">● Perdita rientro</div>
             <input type="text" name="return" value="<?= number_format($unitCosts['return'], 2, '.', '') ?>" class="cogs-kpi-input">
-            <div class="cogs-kpi-sub">€/ordine rientrato — Solo per ordini rientrati in magazzino</div>
-            <div class="cogs-kpi-meta">applicato a <?= (int)$cogsKpi['n_rientrati'] ?> ordini → € <?= number_format($cogsKpi['cost_return'], 2, ',', '.') ?></div>
+            <div class="cogs-kpi-sub">€/ordine rientrato — Costo perso quando il cliente non ritira (es. quota di spedizione non rimborsata dal fornitore)</div>
+            <div class="cogs-kpi-meta">applicato a <?= (int)$cogsKpi['n_rientrati'] ?> ordini rientrati → € <?= number_format($cogsKpi['cost_return'], 2, ',', '.') ?></div>
         </div>
 
-        <div class="cogs-kpi cogs-kpi-yellow">
-            <div class="cogs-kpi-label">● Giacenza</div>
-            <input type="text" name="stock" value="<?= number_format($unitCosts['stock'], 2, '.', '') ?>" class="cogs-kpi-input">
-            <div class="cogs-kpi-sub">€/ordine in giacenza — Solo per ordini in giacenza</div>
-            <div class="cogs-kpi-meta">applicato a <?= (int)$cogsKpi['n_giacenza'] ?> ordini → € <?= number_format($cogsKpi['cost_stock'], 2, ',', '.') ?></div>
-        </div>
-
-        <div style="grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; gap: 14px; flex-wrap: wrap;">
-            <div class="muted" style="font-size: 13px;">
-                Totale costi logistici nel periodo: <strong style="color: var(--accent-2);">€ <?= number_format($cogsKpi['cost_logistics'], 2, ',', '.') ?></strong>
-                · COGS prodotto: <strong style="color: var(--accent-2);">€ <?= number_format($cogsKpi['cogs_prodotto'], 2, ',', '.') ?></strong>
-            </div>
+        <div style="grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 14px; flex-wrap: wrap;">
             <button type="submit">Salva costi logistici</button>
         </div>
     </form>
 
     <!-- Nota spese variabili -->
     <div class="info-box">
-        <strong style="color: var(--pink);">● Spese variabili (Ads, Team, Influencer, Varie)</strong>
-        <p class="muted" style="margin: 8px 0 0 0; font-size: 13px;">
-            Le spese che variano mese per mese (pubblicità, team, influencer, spese varie)
-            si configurano nella sezione <a href="/bilancio.php" style="color: var(--accent-2);">Bilancio</a>
-            mese per mese e vengono usate per il calcolo del margine annuale.
+        <strong style="color: var(--pink);">● Come funziona il calcolo (Drop Shipping)</strong>
+        <p class="muted" style="margin: 8px 0 0 0; font-size: 13px; line-height: 1.7;">
+            Per ogni ordine il sistema calcola:<br>
+            <strong style="color: var(--text);">Margine = Ricavo − Costo bundle (somma qty × costo prodotto Shopify) − Costo spedizione − Perdita rientro</strong><br>
+            Ordini cancellati hanno ricavo 0 e costi 0. Ordini rientrati hanno ricavo 0, costo bundle 0 (rimborsato dal fornitore), ma spedizione + perdita restano. Le spese variabili mensili (Ads, Team, Influencer, ecc.) si gestiscono nella sezione <a href="/bilancio.php" style="color: var(--accent-2);">Bilancio</a> e non rientrano in questo calcolo per-ordine.
         </p>
     </div>
 
@@ -174,10 +188,10 @@ $panel_active = 'costi';
             <table class="panel-table">
                 <thead>
                     <tr>
-                        <th>Prodotto</th>
-                        <th class="num">Volume</th>
+                        <th>Bundle / Offerta</th>
+                        <th class="num">Volume (pz)</th>
                         <th class="num">Ordini</th>
-                        <th class="num">Costo (€)</th>
+                        <th class="num">Costo bundle (€)</th>
                     </tr>
                 </thead>
                 <tbody>

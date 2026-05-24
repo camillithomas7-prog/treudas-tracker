@@ -61,6 +61,19 @@ foreach ($orders as $o) {
     $orderItemsMap[(int)$o['id']] = sh_get_order_items((int)$o['id']);
 }
 
+// P&L per riga (margine drop shipping)
+$unitCosts = sh_cogs_unit_costs();
+$productCostMap = sh_product_cost_map();
+$pnlMap = [];
+$pageTotals = ['revenue' => 0, 'cost' => 0, 'margin' => 0];
+foreach ($orders as $o) {
+    $p = sh_order_pnl($o, $orderItemsMap[(int)$o['id']], $unitCosts, $productCostMap);
+    $pnlMap[(int)$o['id']] = $p;
+    $pageTotals['revenue'] += $p['revenue'];
+    $pageTotals['cost']    += $p['cost_total'];
+    $pageTotals['margin']  += $p['margin'];
+}
+
 $lastSyncAt = (int)(sh_setting_get('shopify_sync_last_run_at') ?? 0);
 
 $deliveryOptions = [
@@ -171,6 +184,8 @@ $panel_active = 'ordini';
                     <th>Cliente</th>
                     <th>Città</th>
                     <th class="num">Totale</th>
+                    <th class="num">Costo</th>
+                    <th class="num">Margine</th>
                     <th>Tipo</th>
                     <th>Stato</th>
                     <th>Tag</th>
@@ -180,7 +195,7 @@ $panel_active = 'ordini';
             </thead>
             <tbody>
             <?php if (empty($orders)): ?>
-                <tr><td colspan="9" class="muted" style="text-align:center; padding: 40px;">Nessun ordine trovato.</td></tr>
+                <tr><td colspan="11" class="muted" style="text-align:center; padding: 40px;">Nessun ordine trovato.</td></tr>
             <?php else: foreach ($orders as $o):
                 $items = $orderItemsMap[(int)$o['id']] ?? [];
                 $tagsArr = array_filter(array_map('trim', explode(',', (string)$o['tags'])));
@@ -199,6 +214,16 @@ $panel_active = 'ordini';
                     </td>
                     <td><?= tr_h($o['shipping_city']) ?: '—' ?></td>
                     <td class="num" style="color: var(--pos);">€ <?= number_format((float)$o['total_price'], 2, ',', '.') ?></td>
+                    <?php $p = $pnlMap[(int)$o['id']]; ?>
+                    <td class="num" title="Bundle €<?= number_format($p['cogs_bundle'], 2, ',', '.') ?> + Spedizione €<?= number_format($p['cogs_shipping'], 2, ',', '.') ?><?= $p['cogs_loss'] > 0 ? ' + Perdita €' . number_format($p['cogs_loss'], 2, ',', '.') : '' ?>">
+                        € <?= number_format($p['cost_total'], 2, ',', '.') ?>
+                    </td>
+                    <td class="num" style="color: <?= $p['margin'] >= 0 ? 'var(--pos)' : 'var(--neg)' ?>; font-weight: 700;">
+                        € <?= number_format($p['margin'], 2, ',', '.') ?>
+                        <?php if ($p['revenue'] > 0): ?>
+                            <br><small class="muted"><?= number_format(($p['margin'] / $p['revenue']) * 100, 0, ',', '.') ?>%</small>
+                        <?php endif; ?>
+                    </td>
                     <td>
                         <?php if ($o['is_cod']): ?>
                             <span class="badge badge-cod">COD</span>
@@ -231,6 +256,19 @@ $panel_active = 'ordini';
                 </tr>
             <?php endforeach; endif; ?>
             </tbody>
+            <?php if (!empty($orders)): ?>
+            <tfoot>
+                <tr>
+                    <td colspan="3" style="text-align:right;">Totali pagina (<?= count($orders) ?> ordini)</td>
+                    <td class="num" style="color: var(--pos);">€ <?= number_format($pageTotals['revenue'], 2, ',', '.') ?></td>
+                    <td class="num">€ <?= number_format($pageTotals['cost'], 2, ',', '.') ?></td>
+                    <td class="num" style="color: <?= $pageTotals['margin'] >= 0 ? 'var(--pos)' : 'var(--neg)' ?>;">
+                        € <?= number_format($pageTotals['margin'], 2, ',', '.') ?>
+                    </td>
+                    <td colspan="5"></td>
+                </tr>
+            </tfoot>
+            <?php endif; ?>
         </table>
     </section>
 

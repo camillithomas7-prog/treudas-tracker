@@ -338,8 +338,54 @@
     gap: 18px;
     margin-top: 22px;
 }
+.cogs-kpi-row-2 {
+    grid-template-columns: repeat(2, 1fr);
+}
 @media (max-width: 960px) {
-    .cogs-kpi-row { grid-template-columns: 1fr; }
+    .cogs-kpi-row, .cogs-kpi-row-2 { grid-template-columns: 1fr; }
+}
+
+/* ── P&L summary card ── */
+.pnl-summary {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+    margin-top: 22px;
+    padding: 20px;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-card);
+}
+.pnl-cell {
+    padding: 10px 16px;
+    border-right: 1px solid var(--glass-border);
+}
+.pnl-cell:last-child { border-right: none; }
+.pnl-cell.pnl-margin {
+    background: linear-gradient(135deg, rgba(255,120,73,.08), rgba(255,184,108,.04));
+    border-radius: var(--radius-sm);
+}
+.pnl-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    letter-spacing: .4px;
+    margin-bottom: 6px;
+}
+.pnl-value {
+    font-size: 22px;
+    font-weight: 700;
+    font-family: 'Space Grotesk', sans-serif;
+}
+.pnl-sub {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 4px;
+}
+@media (max-width: 960px) {
+    .pnl-summary { grid-template-columns: repeat(2, 1fr); }
+    .pnl-cell { border-right: none; border-bottom: 1px solid var(--glass-border); }
 }
 .cogs-kpi {
     background: var(--glass-bg);

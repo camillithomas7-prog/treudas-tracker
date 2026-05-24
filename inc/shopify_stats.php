@@ -378,6 +378,100 @@ function sh_cogs_unit_costs_set(float $shipping, float $return, float $stock): v
     sh_setting_set('cogs_stock_per_order',    (string)$stock);
 }
 
+/**
+ * Mappa rapida product_id => cost_unit per evitare query in loop.
+ */
+function sh_product_cost_map(): array {
+    $rows = tracker_db()->query("SELECT id, cost_unit FROM shopify_products")->fetchAll();
+    $map = [];
+    foreach ($rows as $r) $map[(int)$r['id']] = (float)$r['cost_unit'];
+    return $map;
+}
+
+/**
+ * Calcola P&L per un singolo ordine drop shipping.
+ *
+ * Regole:
+ * - Ordine consegnato/normale: ricavo = total_price, costo = bundle + spedizione
+ * - Ordine rientrato: ricavo = 0 (di solito COD non incassato), costo = spedizione + perdita rientro,
+ *   il fornitore di solito rimborsa la merce → costo bundle = 0
+ * - Ordine cancellato: ricavo = 0, costo = 0 (cancellato prima della spedizione)
+ *
+ * $unitCosts = ['shipping' => €/ordine, 'return' => €/ordine rientrato]
+ */
+function sh_order_pnl(array $order, array $items, array $unitCosts, array $productCostMap): array {
+    $cancelled = !empty($order['cancelled_at']);
+    $returned  = (int)($order['is_returned'] ?? 0) === 1;
+
+    $cogsBundle = 0.0;
+    foreach ($items as $li) {
+        $pid  = (int)($li['product_id'] ?? 0);
+        $qty  = (int)($li['quantity'] ?? 0);
+        $cu   = (float)($productCostMap[$pid] ?? 0);
+        $cogsBundle += $qty * $cu;
+    }
+
+    $cogsShipping = 0.0;
+    $cogsLoss     = 0.0;
+    $revenue      = (float)($order['total_price'] ?? 0);
+
+    if ($cancelled) {
+        $revenue    = 0;
+        $cogsBundle = 0;
+    } elseif ($returned) {
+        $revenue      = 0;
+        $cogsBundle   = 0;
+        $cogsShipping = (float)$unitCosts['shipping'];
+        $cogsLoss     = (float)$unitCosts['return'];
+    } else {
+        $cogsShipping = (float)$unitCosts['shipping'];
+    }
+
+    $totalCost = $cogsBundle + $cogsShipping + $cogsLoss;
+    return [
+        'revenue'       => $revenue,
+        'cogs_bundle'   => $cogsBundle,
+        'cogs_shipping' => $cogsShipping,
+        'cogs_loss'     => $cogsLoss,
+        'cost_total'    => $totalCost,
+        'margin'        => $revenue - $totalCost,
+    ];
+}
+
+/**
+ * P&L aggregato sul periodo.
+ */
+function sh_pnl_period(int $from, int $to, array $unitCosts): array {
+    $pdo = tracker_db();
+    $stmt = $pdo->prepare("SELECT * FROM shopify_orders WHERE created_at BETWEEN :from AND :to");
+    $stmt->execute([':from' => $from, ':to' => $to]);
+    $orders = $stmt->fetchAll() ?: [];
+    if (empty($orders)) {
+        return ['revenue'=>0, 'cogs_bundle'=>0, 'cogs_shipping'=>0, 'cogs_loss'=>0, 'cost_total'=>0, 'margin'=>0, 'n'=>0];
+    }
+    $ids = array_map(fn($o) => (int)$o['id'], $orders);
+    $place = implode(',', array_fill(0, count($ids), '?'));
+    $stmt2 = $pdo->prepare("SELECT * FROM shopify_order_items WHERE order_id IN ($place)");
+    $stmt2->execute($ids);
+    $itemsRows = $stmt2->fetchAll() ?: [];
+    $itemsMap = [];
+    foreach ($itemsRows as $li) $itemsMap[(int)$li['order_id']][] = $li;
+
+    $costMap = sh_product_cost_map();
+    $tot = ['revenue'=>0, 'cogs_bundle'=>0, 'cogs_shipping'=>0, 'cogs_loss'=>0, 'cost_total'=>0, 'margin'=>0, 'n'=>0];
+    foreach ($orders as $o) {
+        $pnl = sh_order_pnl($o, $itemsMap[(int)$o['id']] ?? [], $unitCosts, $costMap);
+        $tot['revenue']       += $pnl['revenue'];
+        $tot['cogs_bundle']   += $pnl['cogs_bundle'];
+        $tot['cogs_shipping'] += $pnl['cogs_shipping'];
+        $tot['cogs_loss']     += $pnl['cogs_loss'];
+        $tot['cost_total']    += $pnl['cost_total'];
+        $tot['margin']        += $pnl['margin'];
+        $tot['n']++;
+    }
+    return $tot;
+}
+
 function sh_revenue_for_month(int $year, int $month): array {
     $pdo = tracker_db();
     $from = mktime(0, 0, 0, $month, 1, $year);
