@@ -302,29 +302,69 @@ function sh_count_orders(array $filters): int {
     return (int)$stmt->fetchColumn();
 }
 
+/**
+ * Aggregato mensile = somma delle entry giornaliere del mese.
+ */
 function sh_costs_for_month(int $year, int $month): array {
     $pdo = tracker_db();
-    $stmt = $pdo->prepare("SELECT * FROM shopify_costs WHERE year = :y AND month = :m");
-    $stmt->execute([':y' => $year, ':m' => $month]);
-    return $stmt->fetch() ?: [
+    $stmt = $pdo->prepare("
+        SELECT
+            COALESCE(SUM(spese_spedizione), 0) AS spese_spedizione,
+            COALESCE(SUM(spesa_merce), 0)      AS spesa_merce,
+            COALESCE(SUM(spesa_ads), 0)        AS spesa_ads,
+            COALESCE(SUM(spesa_influencer), 0) AS spesa_influencer,
+            COALESCE(SUM(spesa_team), 0)       AS spesa_team,
+            COALESCE(SUM(spese_varie), 0)      AS spese_varie,
+            COALESCE(SUM(bonifici_brt), 0)     AS bonifici_brt,
+            GROUP_CONCAT(CASE WHEN note IS NOT NULL AND note != '' THEN substr(date,9,2) || ': ' || note END, ' · ') AS note
+        FROM shopify_costs_daily
+        WHERE date LIKE :pat
+    ");
+    $stmt->execute([':pat' => sprintf('%04d-%02d-%%', $year, $month)]);
+    $r = $stmt->fetch() ?: [];
+    return array_merge([
         'year' => $year, 'month' => $month,
+        'spese_spedizione' => 0, 'spesa_merce' => 0, 'spesa_ads' => 0,
+        'spesa_influencer' => 0, 'spesa_team' => 0, 'spese_varie' => 0,
+        'bonifici_brt' => 0, 'note' => '',
+    ], $r);
+}
+
+function sh_costs_for_day(string $date): array {
+    $pdo = tracker_db();
+    $stmt = $pdo->prepare("SELECT * FROM shopify_costs_daily WHERE date = :d");
+    $stmt->execute([':d' => $date]);
+    return $stmt->fetch() ?: [
+        'date' => $date,
         'spese_spedizione' => 0, 'spesa_merce' => 0, 'spesa_ads' => 0,
         'spesa_influencer' => 0, 'spesa_team' => 0, 'spese_varie' => 0,
         'bonifici_brt' => 0, 'note' => '',
     ];
 }
 
-function sh_costs_all(): array {
+function sh_costs_days_for_month(int $year, int $month): array {
     $pdo = tracker_db();
-    return $pdo->query("SELECT * FROM shopify_costs ORDER BY year DESC, month DESC")->fetchAll() ?: [];
+    $stmt = $pdo->prepare("SELECT * FROM shopify_costs_daily WHERE date LIKE :pat ORDER BY date ASC");
+    $stmt->execute([':pat' => sprintf('%04d-%02d-%%', $year, $month)]);
+    $rows = $stmt->fetchAll() ?: [];
+    $map = [];
+    foreach ($rows as $r) $map[$r['date']] = $r;
+    return $map;
 }
 
-function sh_costs_upsert(int $year, int $month, array $vals): void {
+function sh_costs_all_years(): array {
+    $pdo = tracker_db();
+    $rows = $pdo->query("SELECT DISTINCT substr(date,1,4) AS year FROM shopify_costs_daily ORDER BY year DESC")->fetchAll();
+    return array_map(fn($r) => (int)$r['year'], $rows);
+}
+
+function sh_costs_upsert_day(string $date, array $vals): void {
     $pdo = tracker_db();
     $stmt = $pdo->prepare("
-        INSERT INTO shopify_costs (year, month, spese_spedizione, spesa_merce, spesa_ads, spesa_influencer, spesa_team, spese_varie, bonifici_brt, note, updated_at)
-        VALUES (:y, :m, :sped, :merce, :ads, :inf, :team, :varie, :brt, :note, :upd)
-        ON CONFLICT(year, month) DO UPDATE SET
+        INSERT INTO shopify_costs_daily
+            (date, spese_spedizione, spesa_merce, spesa_ads, spesa_influencer, spesa_team, spese_varie, bonifici_brt, note, updated_at)
+        VALUES (:d, :sped, :merce, :ads, :inf, :team, :varie, :brt, :note, :upd)
+        ON CONFLICT(date) DO UPDATE SET
             spese_spedizione = excluded.spese_spedizione,
             spesa_merce      = excluded.spesa_merce,
             spesa_ads        = excluded.spesa_ads,
@@ -336,8 +376,7 @@ function sh_costs_upsert(int $year, int $month, array $vals): void {
             updated_at       = excluded.updated_at
     ");
     $stmt->execute([
-        ':y'     => $year,
-        ':m'     => $month,
+        ':d'     => $date,
         ':sped'  => (float)($vals['spese_spedizione'] ?? 0),
         ':merce' => (float)($vals['spesa_merce'] ?? 0),
         ':ads'   => (float)($vals['spesa_ads'] ?? 0),
@@ -559,39 +598,24 @@ function sh_pnl_period(int $from, int $to, array $unitCosts): array {
  */
 function sh_marketing_costs_period(int $from, int $to): array {
     $pdo = tracker_db();
-    $out = ['ads' => 0, 'team' => 0, 'influencer' => 0, 'varie' => 0, 'spedizione' => 0, 'merce' => 0, 'brt' => 0];
-
-    if ($from <= 0) $from = 1;
-    $cursor = strtotime(date('Y-m-01', $from));
-    $endTs  = $to;
-
-    while ($cursor <= $endTs) {
-        $y = (int)date('Y', $cursor);
-        $m = (int)date('n', $cursor);
-        $monthStart = mktime(0, 0, 0, $m, 1, $y);
-        $monthEnd   = mktime(0, 0, -1, $m + 1, 1, $y);
-        $daysInMonth = (int)date('t', $monthStart);
-
-        $overlapStart = max($monthStart, $from);
-        $overlapEnd   = min($monthEnd, $endTs);
-        $overlapDays  = max(0, (int)floor(($overlapEnd - $overlapStart) / 86400) + 1);
-        $frac = $daysInMonth > 0 ? ($overlapDays / $daysInMonth) : 0;
-
-        $c = sh_costs_for_month($y, $m);
-        $out['ads']        += (float)$c['spesa_ads']         * $frac;
-        $out['team']       += (float)$c['spesa_team']        * $frac;
-        $out['influencer'] += (float)$c['spesa_influencer']  * $frac;
-        $out['varie']      += (float)$c['spese_varie']       * $frac;
-        $out['spedizione'] += (float)$c['spese_spedizione']  * $frac;
-        $out['merce']      += (float)$c['spesa_merce']       * $frac;
-        $out['brt']        += (float)$c['bonifici_brt']      * $frac;
-
-        // Vai al primo del mese successivo
-        $cursor = strtotime(date('Y-m-01', strtotime('+1 month', $monthStart)));
-    }
-
-    $out['tot_op'] = $out['ads'] + $out['team'] + $out['influencer'] + $out['varie'];
-    return $out;
+    $fromDate = $from > 0 ? date('Y-m-d', $from) : '0000-00-00';
+    $toDate   = date('Y-m-d', $to);
+    $stmt = $pdo->prepare("
+        SELECT
+            COALESCE(SUM(spesa_ads), 0)         AS ads,
+            COALESCE(SUM(spesa_team), 0)        AS team,
+            COALESCE(SUM(spesa_influencer), 0)  AS influencer,
+            COALESCE(SUM(spese_varie), 0)       AS varie,
+            COALESCE(SUM(spese_spedizione), 0)  AS spedizione,
+            COALESCE(SUM(spesa_merce), 0)       AS merce,
+            COALESCE(SUM(bonifici_brt), 0)      AS brt
+        FROM shopify_costs_daily
+        WHERE date >= :from AND date <= :to
+    ");
+    $stmt->execute([':from' => $fromDate, ':to' => $toDate]);
+    $r = $stmt->fetch() ?: ['ads'=>0,'team'=>0,'influencer'=>0,'varie'=>0,'spedizione'=>0,'merce'=>0,'brt'=>0];
+    $r['tot_op'] = (float)$r['ads'] + (float)$r['team'] + (float)$r['influencer'] + (float)$r['varie'];
+    return $r;
 }
 
 function sh_revenue_for_month(int $year, int $month): array {

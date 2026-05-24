@@ -233,6 +233,52 @@ function tracker_install_schema(): void {
         );
     ");
 
+    // Costi giornalieri (entry granulare per data)
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS shopify_costs_daily (
+            date TEXT PRIMARY KEY,
+            spese_spedizione REAL DEFAULT 0,
+            spesa_merce REAL DEFAULT 0,
+            spesa_ads REAL DEFAULT 0,
+            spesa_influencer REAL DEFAULT 0,
+            spesa_team REAL DEFAULT 0,
+            spese_varie REAL DEFAULT 0,
+            bonifici_brt REAL DEFAULT 0,
+            note TEXT,
+            updated_at INTEGER
+        );
+    ");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_scd_date ON shopify_costs_daily(date);");
+
+    // Migrazione one-shot: copia mensile → giorno 1 del mese (solo se daily è vuota)
+    $hasDaily = (int)$pdo->query("SELECT COUNT(*) FROM shopify_costs_daily")->fetchColumn();
+    $hasMonthly = (int)$pdo->query("SELECT COUNT(*) FROM shopify_costs")->fetchColumn();
+    if ($hasDaily === 0 && $hasMonthly > 0) {
+        $rows = $pdo->query("SELECT * FROM shopify_costs WHERE
+            spese_spedizione+spesa_merce+spesa_ads+spesa_influencer+spesa_team+spese_varie+bonifici_brt > 0
+            OR (note IS NOT NULL AND note != '')")->fetchAll();
+        $ins = $pdo->prepare("
+            INSERT INTO shopify_costs_daily
+            (date, spese_spedizione, spesa_merce, spesa_ads, spesa_influencer, spesa_team, spese_varie, bonifici_brt, note, updated_at)
+            VALUES (:d, :sp, :me, :ad, :inf, :tm, :va, :br, :no, :upd)
+        ");
+        foreach ($rows as $r) {
+            $d = sprintf('%04d-%02d-01', (int)$r['year'], (int)$r['month']);
+            $ins->execute([
+                ':d' => $d,
+                ':sp' => (float)$r['spese_spedizione'],
+                ':me' => (float)$r['spesa_merce'],
+                ':ad' => (float)$r['spesa_ads'],
+                ':inf' => (float)$r['spesa_influencer'],
+                ':tm' => (float)$r['spesa_team'],
+                ':va' => (float)$r['spese_varie'],
+                ':br' => (float)$r['bonifici_brt'],
+                ':no' => (string)($r['note'] ?? ''),
+                ':upd' => time(),
+            ]);
+        }
+    }
+
     // Catalogo prodotti Shopify (per COGS unit cost)
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS shopify_products (

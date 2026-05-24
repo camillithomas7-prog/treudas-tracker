@@ -476,6 +476,74 @@
 .cost-input-inline.saved  { border-color: var(--pos); box-shadow: 0 0 0 3px rgba(74, 222, 128, .18); }
 .cost-input-inline.error  { border-color: var(--neg); }
 
+/* ── Bilancio: tabella spese giornaliere ── */
+.month-pill {
+    display: inline-block;
+    padding: 6px 12px;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    color: var(--text-dim);
+    border-radius: 8px;
+    font-size: 12px;
+    text-decoration: none;
+    font-weight: 500;
+    transition: all .15s ease;
+}
+.month-pill:hover { color: var(--text); border-color: var(--accent); }
+.month-pill.active {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #1a0a05;
+    border-color: var(--accent);
+}
+
+.daily-costs-table { table-layout: fixed; }
+.daily-costs-table th { font-size: 10px; }
+.daily-costs-table td { padding: 4px 6px !important; }
+.daily-costs-table .day-cell {
+    background: rgba(20, 28, 56, 0.6);
+    width: 70px;
+    text-align: left;
+}
+.daily-costs-table .day-cell strong { font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--cyan); }
+.daily-costs-table .day-cell small { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .4px; }
+.daily-costs-table .row-today td { background: rgba(255, 184, 108, 0.08); }
+.daily-costs-table .row-today .day-cell strong { color: var(--accent-2); }
+.daily-costs-table .row-weekend td { background: rgba(140, 170, 255, 0.025); }
+.daily-costs-table .row-weekend.row-today td { background: rgba(255, 184, 108, 0.08); }
+
+.cost-cell {
+    width: 100%;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text);
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    text-align: right;
+    transition: all .15s ease;
+}
+.cost-cell:hover { background: rgba(140,170,255,.05); }
+.cost-cell:focus { outline: none; background: rgba(20,28,56,0.8); border-color: var(--accent); box-shadow: 0 0 0 2px rgba(255,120,73,.14); }
+.cost-cell.saving { border-color: var(--cyan); }
+.cost-cell.saved  { border-color: var(--pos); background: rgba(74,222,128,.08); }
+.cost-cell.error  { border-color: var(--neg); }
+
+.note-cell {
+    width: 100%;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-dim);
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    transition: all .15s ease;
+}
+.note-cell:hover { background: rgba(140,170,255,.05); }
+.note-cell:focus { outline: none; background: rgba(20,28,56,0.8); border-color: var(--accent); }
+.note-cell.saving { border-color: var(--cyan); }
+.note-cell.saved  { border-color: var(--pos); }
+
 /* ── alert ok/err ── */
 .alert {
     padding: 12px 16px;
