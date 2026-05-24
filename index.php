@@ -86,10 +86,17 @@ $creativesD = tr_distinct('utm_content');
 <meta http-equiv="refresh" content="60">
 <title>TREUDAS Tracker — Dashboard</title>
 <link rel="stylesheet" href="/assets/style.css?v=<?= @filemtime(__DIR__ . '/assets/style.css') ?>">
+<link rel="stylesheet" href="/assets/panel.css?v=<?= @filemtime(__DIR__ . '/assets/panel.css') ?>">
 </head>
 <body>
 <header class="topbar">
     <div class="brand">TREUDAS <span>Tracker</span></div>
+    <nav class="panel-nav">
+        <a href="/"               class="panel-link active">Tracker</a>
+        <a href="/ordini.php"      class="panel-link">Ordini</a>
+        <a href="/statistiche.php" class="panel-link">Statistiche</a>
+        <a href="/costi.php"       class="panel-link">Costi</a>
+    </nav>
     <div class="user-info">
         <span>● LIVE</span>
         <span><?= date('d M H:i') ?></span>
