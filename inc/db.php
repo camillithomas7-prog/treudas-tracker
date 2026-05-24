@@ -209,6 +209,13 @@ function tracker_install_schema(): void {
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_so_cancelled ON shopify_orders(cancelled_at);");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_so_returned ON shopify_orders(is_returned);");
 
+    // Migrazione: aggiungi delivery_status custom (gestito da noi, non da Shopify)
+    $soCols = $pdo->query("PRAGMA table_info(shopify_orders)")->fetchAll(PDO::FETCH_COLUMN, 1);
+    if (!in_array('delivery_status', $soCols)) {
+        $pdo->exec("ALTER TABLE shopify_orders ADD COLUMN delivery_status TEXT");
+        $pdo->exec("CREATE INDEX IF NOT EXISTS idx_so_delivery ON shopify_orders(delivery_status)");
+    }
+
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS shopify_costs (
             year INTEGER NOT NULL,

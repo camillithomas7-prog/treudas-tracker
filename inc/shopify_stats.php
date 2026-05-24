@@ -118,6 +118,19 @@ function sh_top_cities(int $from, int $to, int $limit = 10): array {
     return $stmt->fetchAll() ?: [];
 }
 
+function sh_get_order_items(int $orderId): array {
+    $stmt = tracker_db()->prepare("SELECT * FROM shopify_order_items WHERE order_id = ? ORDER BY line_id");
+    $stmt->execute([$orderId]);
+    return $stmt->fetchAll() ?: [];
+}
+
+function sh_set_delivery_status(int $orderId, string $status): void {
+    $allowed = ['', 'consegnato', 'in_transito', 'in_lavorazione', 'rientrato', 'cancellato', 'problema'];
+    if (!in_array($status, $allowed, true)) return;
+    tracker_db()->prepare("UPDATE shopify_orders SET delivery_status = :s WHERE id = :id")
+        ->execute([':s' => $status, ':id' => $orderId]);
+}
+
 function sh_list_orders(array $filters, int $limit = 50, int $offset = 0): array {
     $pdo = tracker_db();
     $where = ['1=1'];
@@ -158,6 +171,14 @@ function sh_list_orders(array $filters, int $limit = 50, int $offset = 0): array
             $where[] = 'cancelled_at IS NULL';
         }
     }
+    if (isset($filters['delivery_status']) && $filters['delivery_status'] !== '') {
+        if ($filters['delivery_status'] === '_none_') {
+            $where[] = "(delivery_status IS NULL OR delivery_status = '')";
+        } else {
+            $where[] = 'delivery_status = :ds';
+            $params[':ds'] = $filters['delivery_status'];
+        }
+    }
     if (!empty($filters['search'])) {
         $where[] = '(name LIKE :q OR email LIKE :q OR customer_first_name LIKE :q OR customer_last_name LIKE :q OR shipping_city LIKE :q OR phone LIKE :q)';
         $params[':q'] = '%' . $filters['search'] . '%';
@@ -194,6 +215,14 @@ function sh_count_orders(array $filters): int {
     if (isset($filters['returned']) && $filters['returned'] !== '') { $where[] = 'is_returned = :ret'; $params[':ret'] = (int)$filters['returned']; }
     if (isset($filters['cancelled']) && $filters['cancelled'] !== '') {
         $where[] = (int)$filters['cancelled'] === 1 ? 'cancelled_at IS NOT NULL' : 'cancelled_at IS NULL';
+    }
+    if (isset($filters['delivery_status']) && $filters['delivery_status'] !== '') {
+        if ($filters['delivery_status'] === '_none_') {
+            $where[] = "(delivery_status IS NULL OR delivery_status = '')";
+        } else {
+            $where[] = 'delivery_status = :ds';
+            $params[':ds'] = $filters['delivery_status'];
+        }
     }
     if (!empty($filters['search'])) {
         $where[] = '(name LIKE :q OR email LIKE :q OR customer_first_name LIKE :q OR customer_last_name LIKE :q OR shipping_city LIKE :q OR phone LIKE :q)';

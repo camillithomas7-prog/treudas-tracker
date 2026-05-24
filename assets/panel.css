@@ -264,6 +264,62 @@
     box-shadow: 0 0 0 3px rgba(255,120,73,.12);
 }
 
+/* ── Ordini: tabella estesa ── */
+.panel-table-orders .order-link {
+    color: var(--cyan);
+    text-decoration: none;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+}
+.panel-table-orders .order-link:hover { text-decoration: underline; }
+.panel-table-orders .cell-products {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-dim);
+    max-width: 320px;
+}
+.panel-table-orders .cell-products .qty {
+    color: var(--cyan);
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 600;
+    margin-right: 4px;
+}
+.panel-table-orders .badge.tag {
+    background: rgba(167, 139, 250, .12);
+    color: var(--violet);
+    margin: 2px 2px 2px 0;
+}
+
+.delivery-select {
+    background: rgba(20, 28, 56, 0.6);
+    border: 1px solid var(--glass-border);
+    color: var(--text);
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all .15s ease;
+    appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+    background-position: calc(100% - 12px) 50%, calc(100% - 7px) 50%;
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+    padding-right: 24px;
+}
+.delivery-select:hover  { border-color: var(--accent); }
+.delivery-select:focus  { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,120,73,.14); }
+.delivery-select.saving { border-color: var(--cyan); }
+.delivery-select.saved  { border-color: var(--pos); box-shadow: 0 0 0 3px rgba(74,222,128,.18); }
+.delivery-select.error  { border-color: var(--neg); }
+.delivery-select.ds-consegnato  { background-color: rgba(74,222,128,.15);  border-color: rgba(74,222,128,.4);  color: var(--pos); }
+.delivery-select.ds-transito    { background-color: rgba(94,212,255,.14);  border-color: rgba(94,212,255,.4);  color: var(--cyan); }
+.delivery-select.ds-lavorazione { background-color: rgba(167,139,250,.14); border-color: rgba(167,139,250,.4); color: var(--violet); }
+.delivery-select.ds-rientrato   { background-color: rgba(251,191,36,.14);  border-color: rgba(251,191,36,.4);  color: var(--warn); }
+.delivery-select.ds-cancellato  { background-color: rgba(248,113,113,.14); border-color: rgba(248,113,113,.4); color: var(--neg); }
+.delivery-select.ds-problema    { background-color: rgba(248,113,113,.14); border-color: rgba(248,113,113,.4); color: var(--neg); }
+
+.row-delivered { background: rgba(74, 222, 128, 0.03); }
+
 /* ── COGS: KPI logistici editabili ── */
 .page-title h1 {
     margin: 8px 0 4px 0;

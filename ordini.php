@@ -18,34 +18,60 @@ if (!sh_get_token()) {
     exit;
 }
 
-// Sync incrementale (throttled a 30s) all'apertura, oppure full su richiesta
-$syncResult = null;
+// AJAX: salva delivery_status
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') === 'set_delivery') {
+    $orderId = (int)($_POST['order_id'] ?? 0);
+    $status  = trim((string)($_POST['status'] ?? ''));
+    if ($orderId > 0) {
+        sh_set_delivery_status($orderId, $status);
+        header('Content-Type: application/json');
+        echo json_encode(['ok' => true, 'order_id' => $orderId, 'status' => $status]);
+        exit;
+    }
+}
+
+// Sync incrementale (throttled 30s) all'apertura, oppure full su richiesta
 if (isset($_GET['sync'])) {
-    $syncResult = $_GET['sync'] === 'full' ? sh_sync_orders(true) : sh_sync_orders(false);
-    // PRG: pulisci la query
-    header('Location: /ordini.php?synced=' . ($syncResult['ok'] ? $syncResult['synced'] : 'err'));
+    $r = $_GET['sync'] === 'full' ? sh_sync_orders(true) : sh_sync_orders(false);
+    header('Location: /ordini.php?synced=' . ($r['ok'] ? $r['synced'] : 'err'));
     exit;
 }
-$syncResult = sh_sync_orders_throttled(30);
+sh_sync_orders_throttled(30);
 $syncedFlag = $_GET['synced'] ?? null;
 
-// Filtri
 $filters = [
-    'is_cod'      => $_GET['is_cod']      ?? '',
-    'fulfillment' => $_GET['fulfillment'] ?? '',
-    'financial'   => $_GET['financial']   ?? '',
-    'returned'    => $_GET['returned']    ?? '',
-    'cancelled'   => $_GET['cancelled']   ?? '',
-    'search'      => trim((string)($_GET['q'] ?? '')),
+    'is_cod'          => $_GET['is_cod']          ?? '',
+    'fulfillment'     => $_GET['fulfillment']     ?? '',
+    'financial'       => $_GET['financial']       ?? '',
+    'returned'        => $_GET['returned']        ?? '',
+    'cancelled'       => $_GET['cancelled']       ?? '',
+    'delivery_status' => $_GET['delivery_status'] ?? '',
+    'search'          => trim((string)($_GET['q'] ?? '')),
 ];
 
 $page = max(1, (int)($_GET['p'] ?? 1));
 $perPage = 50;
-$total = sh_count_orders($filters);
+$total  = sh_count_orders($filters);
 $orders = sh_list_orders($filters, $perPage, ($page - 1) * $perPage);
 $totalPages = max(1, (int)ceil($total / $perPage));
 
+// Carica line items per ogni ordine in pagina
+$orderItemsMap = [];
+foreach ($orders as $o) {
+    $orderItemsMap[(int)$o['id']] = sh_get_order_items((int)$o['id']);
+}
+
 $lastSyncAt = (int)(sh_setting_get('shopify_sync_last_run_at') ?? 0);
+
+$deliveryOptions = [
+    ''               => '— Da definire —',
+    'in_lavorazione' => 'In lavorazione',
+    'in_transito'    => 'In transito',
+    'consegnato'     => 'Consegnato',
+    'rientrato'      => 'Rientrato',
+    'cancellato'     => 'Cancellato',
+    'problema'       => 'Problema',
+];
 
 $panel_active = 'ordini';
 ?>
@@ -86,8 +112,17 @@ $panel_active = 'ordini';
             <label>Pagamento
                 <select name="is_cod">
                     <option value="">— Tutti —</option>
-                    <option value="1" <?= $filters['is_cod']==='1'?'selected':'' ?>>COD (contrassegno)</option>
-                    <option value="0" <?= $filters['is_cod']==='0'?'selected':'' ?>>Prepagato</option>
+                    <option value="1" <?= $filters['is_cod']==='1'?'selected':'' ?>>COD</option>
+                    <option value="0" <?= $filters['is_cod']==='0'?'selected':'' ?>>Prepaid</option>
+                </select>
+            </label>
+            <label>Stato consegna
+                <select name="delivery_status">
+                    <option value="">— Tutti —</option>
+                    <option value="_none_" <?= $filters['delivery_status']==='_none_'?'selected':'' ?>>Da definire</option>
+                    <?php foreach ($deliveryOptions as $k => $v): if ($k === '') continue; ?>
+                        <option value="<?= tr_h($k) ?>" <?= $filters['delivery_status']===$k?'selected':'' ?>><?= tr_h($v) ?></option>
+                    <?php endforeach; ?>
                 </select>
             </label>
             <label>Stato pagamento
@@ -98,7 +133,7 @@ $panel_active = 'ordini';
                     <?php endforeach; ?>
                 </select>
             </label>
-            <label>Stato consegna
+            <label>Fulfillment Shopify
                 <select name="fulfillment">
                     <option value="">— Tutti —</option>
                     <option value="unfulfilled" <?= $filters['fulfillment']==='unfulfilled'?'selected':'' ?>>Da spedire</option>
@@ -106,7 +141,7 @@ $panel_active = 'ordini';
                     <option value="partial"     <?= $filters['fulfillment']==='partial'?'selected':'' ?>>Parziale</option>
                 </select>
             </label>
-            <label>Rientrato magazzino
+            <label>Rientrato
                 <select name="returned">
                     <option value="">— Tutti —</option>
                     <option value="1" <?= $filters['returned']==='1'?'selected':'' ?>>Sì</option>
@@ -129,73 +164,79 @@ $panel_active = 'ordini';
     </form>
 
     <section class="panel-table-wrap">
-        <table class="panel-table">
+        <table class="panel-table panel-table-orders">
             <thead>
                 <tr>
                     <th>Ordine</th>
-                    <th>Data</th>
                     <th>Cliente</th>
                     <th>Città</th>
-                    <th>Pagamento</th>
-                    <th>Consegna</th>
-                    <th>Totale</th>
+                    <th class="num">Totale</th>
+                    <th>Tipo</th>
                     <th>Stato</th>
+                    <th>Tag</th>
+                    <th>Data</th>
+                    <th>Prodotti</th>
                 </tr>
             </thead>
             <tbody>
             <?php if (empty($orders)): ?>
-                <tr><td colspan="8" class="muted" style="text-align:center; padding: 40px;">Nessun ordine trovato con i filtri attuali.</td></tr>
-            <?php else: ?>
-                <?php foreach ($orders as $o): ?>
-                    <tr class="<?= $o['cancelled_at'] ? 'row-cancelled' : '' ?> <?= $o['is_returned'] ? 'row-returned' : '' ?>">
-                        <td><strong><?= tr_h($o['name']) ?: '#' . $o['id'] ?></strong></td>
-                        <td><?= $o['created_at'] ? tr_h(date('d/m/Y H:i', (int)$o['created_at'])) : '—' ?></td>
-                        <td>
-                            <?= tr_h(trim($o['customer_first_name'] . ' ' . $o['customer_last_name'])) ?: tr_h($o['email']) ?>
-                            <?php if ($o['email']): ?><br><small class="muted"><?= tr_h($o['email']) ?></small><?php endif; ?>
-                        </td>
-                        <td><?= tr_h($o['shipping_city']) ?><br><small class="muted"><?= tr_h($o['shipping_province']) ?></small></td>
-                        <td>
-                            <?php if ($o['is_cod']): ?>
-                                <span class="badge badge-cod">COD</span>
-                            <?php else: ?>
-                                <span class="badge badge-prepaid">Prepaid</span>
-                            <?php endif; ?>
-                            <br><small class="muted"><?= tr_h($o['financial_status']) ?></small>
-                        </td>
-                        <td>
-                            <?php $f = $o['fulfillment_status']; ?>
-                            <?php if (!$f): ?>
-                                <span class="badge badge-pending">Da spedire</span>
-                            <?php elseif ($f === 'fulfilled'): ?>
-                                <span class="badge badge-ok">Spedito</span>
-                            <?php else: ?>
-                                <span class="badge"><?= tr_h($f) ?></span>
-                            <?php endif; ?>
-                        </td>
-                        <td class="num">€ <?= number_format((float)$o['total_price'], 2, ',', '.') ?></td>
-                        <td>
-                            <?php if ($o['cancelled_at']): ?>
-                                <span class="badge badge-err">Cancellato</span>
-                            <?php endif; ?>
-                            <?php if ($o['is_returned']): ?>
-                                <span class="badge badge-warn">Rientrato</span>
-                            <?php endif; ?>
-                        </td>
-                    </tr>
-                <?php endforeach; ?>
-            <?php endif; ?>
+                <tr><td colspan="9" class="muted" style="text-align:center; padding: 40px;">Nessun ordine trovato.</td></tr>
+            <?php else: foreach ($orders as $o):
+                $items = $orderItemsMap[(int)$o['id']] ?? [];
+                $tagsArr = array_filter(array_map('trim', explode(',', (string)$o['tags'])));
+                $tagsArr = array_values(array_filter($tagsArr, fn($t) => stripos($t, 'releasit') === false)); // nascondi tag tecnici
+                $delivery = (string)($o['delivery_status'] ?? '');
+                $rowClasses = [];
+                if ($o['cancelled_at'])         $rowClasses[] = 'row-cancelled';
+                if ($o['is_returned'])          $rowClasses[] = 'row-returned';
+                if ($delivery === 'consegnato') $rowClasses[] = 'row-delivered';
+            ?>
+                <tr class="<?= implode(' ', $rowClasses) ?>">
+                    <td><a href="https://<?= tr_h(SHOPIFY_SHOP_DOMAIN) ?>/admin/orders/<?= (int)$o['id'] ?>" target="_blank" class="order-link"><?= tr_h($o['name'] ?: '#' . $o['id']) ?></a></td>
+                    <td>
+                        <strong><?= tr_h(trim($o['customer_first_name'] . ' ' . $o['customer_last_name'])) ?: '—' ?></strong>
+                        <?php if ($o['phone']): ?><br><small class="muted"><?= tr_h($o['phone']) ?></small><?php endif; ?>
+                    </td>
+                    <td><?= tr_h($o['shipping_city']) ?: '—' ?></td>
+                    <td class="num" style="color: var(--pos);">€ <?= number_format((float)$o['total_price'], 2, ',', '.') ?></td>
+                    <td>
+                        <?php if ($o['is_cod']): ?>
+                            <span class="badge badge-cod">COD</span>
+                        <?php else: ?>
+                            <span class="badge badge-prepaid">Prepaid</span>
+                        <?php endif; ?>
+                    </td>
+                    <td>
+                        <select class="delivery-select"
+                                data-oid="<?= (int)$o['id'] ?>"
+                                data-current="<?= tr_h($delivery) ?>">
+                            <?php foreach ($deliveryOptions as $k => $v): ?>
+                                <option value="<?= tr_h($k) ?>" <?= $delivery === $k ? 'selected' : '' ?>><?= tr_h($v) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </td>
+                    <td>
+                        <?php foreach ($tagsArr as $t): ?>
+                            <span class="badge tag"><?= tr_h($t) ?></span>
+                        <?php endforeach; ?>
+                        <?php if ($o['is_returned']): ?><span class="badge badge-warn">Rientrato</span><?php endif; ?>
+                        <?php if ($o['cancelled_at']): ?><span class="badge badge-err">Cancellato</span><?php endif; ?>
+                    </td>
+                    <td><small><?= $o['created_at'] ? tr_h(date('d/m/Y', (int)$o['created_at'])) : '—' ?></small></td>
+                    <td class="cell-products">
+                        <?php foreach ($items as $li): ?>
+                            <div><span class="qty">×<?= (int)$li['quantity'] ?></span> <?= tr_h($li['title']) ?></div>
+                        <?php endforeach; ?>
+                    </td>
+                </tr>
+            <?php endforeach; endif; ?>
             </tbody>
         </table>
     </section>
 
     <?php if ($totalPages > 1): ?>
         <div class="pagination">
-            <?php
-            $qs = $_GET; unset($qs['p']);
-            $base = '/ordini.php?' . http_build_query($qs);
-            $sep = str_contains($base, '?') && substr($base, -1) !== '?' ? '&' : '';
-            ?>
+            <?php $qs = $_GET; unset($qs['p']); $base = '/ordini.php?' . http_build_query($qs); $sep = str_contains($base, '?') && substr($base, -1) !== '?' ? '&' : ''; ?>
             <?php if ($page > 1): ?>
                 <a href="<?= tr_h($base . $sep . 'p=' . ($page - 1)) ?>" class="btn-sm">← Prec</a>
             <?php endif; ?>
@@ -207,5 +248,50 @@ $panel_active = 'ordini';
     <?php endif; ?>
 
 </main>
+
+<script>
+// Auto-save delivery status on change
+document.querySelectorAll('.delivery-select').forEach(sel => {
+    sel.addEventListener('change', async () => {
+        const oid = sel.dataset.oid;
+        const status = sel.value;
+        sel.classList.add('saving');
+        try {
+            const fd = new FormData();
+            fd.append('action', 'set_delivery');
+            fd.append('order_id', oid);
+            fd.append('status', status);
+            const r = await fetch('/ordini.php', { method: 'POST', body: fd });
+            const j = await r.json();
+            if (j.ok) {
+                sel.classList.remove('saving');
+                sel.classList.add('saved');
+                setTimeout(() => sel.classList.remove('saved'), 1000);
+                // Aggiorna colore in base allo stato
+                sel.dataset.current = status;
+                applyDeliveryColor(sel);
+            }
+        } catch (e) {
+            sel.classList.remove('saving');
+            sel.classList.add('error');
+        }
+    });
+    applyDeliveryColor(sel);
+});
+
+function applyDeliveryColor(sel) {
+    sel.classList.remove('ds-consegnato', 'ds-rientrato', 'ds-cancellato', 'ds-transito', 'ds-problema', 'ds-lavorazione');
+    const map = {
+        consegnato:     'ds-consegnato',
+        in_transito:    'ds-transito',
+        rientrato:      'ds-rientrato',
+        cancellato:     'ds-cancellato',
+        problema:       'ds-problema',
+        in_lavorazione: 'ds-lavorazione',
+    };
+    if (map[sel.value]) sel.classList.add(map[sel.value]);
+}
+</script>
+
 </body>
 </html>
