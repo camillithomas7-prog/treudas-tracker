@@ -12,18 +12,37 @@ $__curColor = $__cur['color'] ?? '#f59e0b';
     <div class="brand" style="display:flex;align-items:center;gap:14px;">
         <span style="opacity:.6;font-weight:700;">Gestionale</span>
         <?php if ($panel_active !== 'dashboard' && !empty($__stores)): ?>
-        <div class="store-switch" style="display:flex;align-items:center;gap:7px;background:var(--bg-card-2,#161b2e);border:1px solid var(--border,#26304a);border-radius:9px;padding:5px 10px;">
-            <span style="width:9px;height:9px;border-radius:50%;background:<?= htmlspecialchars($__curColor) ?>;box-shadow:0 0 8px <?= htmlspecialchars($__curColor) ?>;flex:0 0 auto;"></span>
-            <select id="storeSwitch" autocomplete="off" onchange="var u=new URL(location.href);u.searchParams.set('store',this.value);location.assign(u.toString());"
-                    style="background:transparent;border:0;color:var(--text,#e7ecf5);font-size:14px;font-weight:700;cursor:pointer;outline:none;max-width:200px;">
-                <?php foreach ($__stores as $s): ?>
-                    <option value="<?= htmlspecialchars($s['slug']) ?>" <?= (int)$s['id'] === (int)$__cur['id'] ? 'selected' : '' ?>>
-                        <?= htmlspecialchars($s['name']) ?> · <?= htmlspecialchars($s['currency']) ?>
-                    </option>
+        <details class="storesw">
+            <summary>
+                <span class="ss-dot" style="background:<?= htmlspecialchars($__curColor) ?>;box-shadow:0 0 8px <?= htmlspecialchars($__curColor) ?>;"></span>
+                <span class="ss-cur"><?= htmlspecialchars($__cur['name']) ?> · <?= htmlspecialchars($__cur['currency']) ?></span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="ss-chev"><path d="m6 9 6 6 6-6"></path></svg>
+            </summary>
+            <div class="ss-menu">
+                <?php foreach ($__stores as $s): $on = (int)$s['id'] === (int)$__cur['id']; ?>
+                    <a href="?store=<?= htmlspecialchars($s['slug']) ?>" class="<?= $on ? 'on' : '' ?>">
+                        <span class="ss-dot" style="background:<?= htmlspecialchars($s['color']) ?>;"></span>
+                        <span><?= htmlspecialchars($s['name']) ?> · <?= htmlspecialchars($s['currency']) ?></span>
+                        <?php if ($on): ?><span class="ss-ck">✓</span><?php endif; ?>
+                    </a>
                 <?php endforeach; ?>
-            </select>
-            <script>(function(){var sw=document.getElementById('storeSwitch');if(sw)sw.value=<?= json_encode($__cur['slug'] ?? '') ?>;})();</script>
-        </div>
+                <a href="/stores.php" class="ss-add">+ Gestisci store</a>
+            </div>
+        </details>
+        <style>
+            .storesw{position:relative;}
+            .storesw>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;background:var(--bg-card-2,#161b2e);border:1px solid var(--border,#26304a);border-radius:9px;padding:6px 11px;font-weight:700;font-size:14px;color:var(--text,#e7ecf5);}
+            .storesw>summary::-webkit-details-marker{display:none;}
+            .storesw .ss-dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto;}
+            .storesw .ss-chev{opacity:.6;transition:transform .15s;}
+            .storesw[open] .ss-chev{transform:rotate(180deg);}
+            .storesw .ss-menu{position:absolute;top:calc(100% + 6px);left:0;min-width:215px;background:var(--bg-card,#10131f);border:1px solid var(--border,#26304a);border-radius:11px;padding:6px;z-index:200;box-shadow:0 16px 40px rgba(0,0,0,.5);}
+            .storesw .ss-menu a{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:8px;text-decoration:none;color:var(--text,#e7ecf5);font-size:14px;font-weight:600;}
+            .storesw .ss-menu a:hover{background:var(--bg-card-2,#161b2e);}
+            .storesw .ss-menu a.on{background:rgba(245,158,11,.12);}
+            .storesw .ss-menu a .ss-ck{margin-left:auto;color:var(--accent,#f59e0b);}
+            .storesw .ss-add{margin-top:4px;border-top:1px solid var(--border,#26304a);border-radius:0 0 8px 8px;color:var(--text-dim,#9aa6bf)!important;font-weight:500!important;font-size:13px!important;}
+        </style>
         <?php endif; ?>
     </div>
     <nav class="panel-nav">
