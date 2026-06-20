@@ -92,6 +92,7 @@ $creativesD = tr_distinct('utm_content');
 <header class="topbar">
     <div class="brand">TREUDAS <span>Tracker</span></div>
     <nav class="panel-nav">
+        <a href="/dashboard.php"   class="panel-link">Dashboard</a>
         <a href="/"               class="panel-link active">Tracker</a>
         <a href="/ordini.php"      class="panel-link">Ordini</a>
         <a href="/statistiche.php" class="panel-link">Statistiche</a>
