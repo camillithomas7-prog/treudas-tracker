@@ -55,6 +55,9 @@ try {
     $body = $rawBody ? (json_decode($rawBody, true) ?: []) : [];
     $sid  = trim((string)($body['session_id'] ?? ''));
     $type = trim((string)($body['event_type'] ?? ''));
+    $storeKey = trim((string)($body['store_key'] ?? ''));
+    $tStore   = ($storeKey && function_exists('tr_store_by_track_key')) ? tr_store_by_track_key($storeKey) : null;
+    $storeId  = $tStore ? (int)$tStore['id'] : 1;
 
     if (!$sid || !preg_match('/^[a-zA-Z0-9_-]{8,64}$/', $sid)) {
         tr_track_log(400, 'invalid_session_id', $rawBody, "sid=$sid");
@@ -91,14 +94,14 @@ try {
     if (!$exists->fetchColumn()) {
         $ins = $db->prepare("
             INSERT INTO sessions (
-                id, created_at, first_url, referrer,
+                id, store_id, created_at, first_url, referrer,
                 utm_source, utm_medium, utm_campaign, utm_content, utm_term,
                 fbclid, gclid, ttclid,
                 ip, ua, device_type, last_seen_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
         $ins->execute([
-            $sid, $now, $url, $referrer,
+            $sid, $storeId, $now, $url, $referrer,
             $utm['utm_source']   ?? null,
             $utm['utm_medium']   ?? null,
             $utm['utm_campaign'] ?? null,
@@ -177,11 +180,11 @@ try {
     }
 
     $evt = $db->prepare("
-        INSERT INTO events (session_id, event_type, ts, client_ts, url, meta_json, checkout_token)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO events (store_id, session_id, event_type, ts, client_ts, url, meta_json, checkout_token)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ");
     $evt->execute([
-        $sid, $type, $now,
+        $storeId, $sid, $type, $now,
         $clientTs ?: null,
         $url,
         $meta ? json_encode($meta, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) : null,

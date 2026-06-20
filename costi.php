@@ -14,7 +14,7 @@ tracker_install_schema();
 date_default_timezone_set(tracker_config()['timezone']);
 
 if (!sh_get_token()) {
-    header('Location: /shopify_oauth.php?need_token=1');
+    header('Location: /stores.php');
     exit;
 }
 

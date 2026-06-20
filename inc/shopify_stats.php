@@ -6,6 +6,11 @@
 
 declare(strict_types=1);
 
+/** ID dello store attivo (scoping di tutte le query del gestionale). */
+function sh_sid(): int {
+    return function_exists('tr_store_current_id') ? tr_store_current_id() : 1;
+}
+
 function sh_kpi(int $from, int $to): array {
     $pdo = tracker_db();
     $stmt = $pdo->prepare("
@@ -24,7 +29,7 @@ function sh_kpi(int $from, int $to): array {
             SUM(CASE WHEN is_returned = 1 THEN 1 ELSE 0 END) AS n_rientrati,
             SUM(CASE WHEN cancelled_at IS NOT NULL THEN 1 ELSE 0 END) AS n_cancellati
         FROM shopify_orders
-        WHERE created_at BETWEEN :from AND :to
+        WHERE store_id = " . sh_sid() . " AND created_at BETWEEN :from AND :to
     ");
     $stmt->execute([':from' => $from, ':to' => $to]);
     $row = $stmt->fetch() ?: [];
@@ -33,7 +38,7 @@ function sh_kpi(int $from, int $to): array {
     $stmtR = $pdo->prepare("
         SELECT COUNT(*) AS n, COALESCE(SUM(total_price), 0) AS importo
         FROM shopify_orders
-        WHERE cancelled_at BETWEEN :from AND :to
+        WHERE store_id = " . sh_sid() . " AND cancelled_at BETWEEN :from AND :to
     ");
     $stmtR->execute([':from' => $from, ':to' => $to]);
     $resi = $stmtR->fetch() ?: ['n' => 0, 'importo' => 0];
@@ -49,7 +54,7 @@ function sh_kpi(int $from, int $to): array {
                 SUM(CASE WHEN cancelled_at IS NULL AND is_returned = 0 THEN 1 ELSE 0 END) AS consegnati,
                 SUM(CASE WHEN cancelled_at IS NOT NULL OR is_returned = 1 THEN 1 ELSE 0 END) AS persi
             FROM shopify_orders
-            WHERE is_cod = 1 AND created_at BETWEEN :from AND :to
+            WHERE is_cod = 1 AND store_id = " . sh_sid() . " AND created_at BETWEEN :from AND :to
         ");
         $stmtC->execute([':from' => $from, ':to' => $to]);
         $c = $stmtC->fetch() ?: ['consegnati' => 0, 'persi' => 0];
@@ -85,7 +90,7 @@ function sh_top_variants_period(int $from, int $to, int $limit = 20): array {
         JOIN shopify_orders o ON o.id = li.order_id
         JOIN shopify_variants v ON v.id = li.variant_id
         JOIN shopify_products p ON p.id = v.product_id
-        WHERE o.created_at BETWEEN :from AND :to
+        WHERE o.store_id = " . sh_sid() . " AND o.created_at BETWEEN :from AND :to
           AND o.cancelled_at IS NULL
         GROUP BY v.id
         ORDER BY pezzi DESC
@@ -103,7 +108,7 @@ function sh_top_variants_period(int $from, int $to, int $limit = 20): array {
  */
 function sh_daily_profit_trend(int $from, int $to, array $unitCosts): array {
     $pdo = tracker_db();
-    $stmt = $pdo->prepare("SELECT * FROM shopify_orders WHERE created_at BETWEEN :from AND :to");
+    $stmt = $pdo->prepare("SELECT * FROM shopify_orders WHERE store_id = " . sh_sid() . " AND created_at BETWEEN :from AND :to");
     $stmt->execute([':from' => $from, ':to' => $to]);
     $orders = $stmt->fetchAll() ?: [];
     if (empty($orders)) return [];
@@ -141,7 +146,7 @@ function sh_daily_trend(int $from, int $to): array {
             COALESCE(SUM(total_price), 0) AS fatturato,
             SUM(CASE WHEN is_cod = 1 THEN 1 ELSE 0 END) AS n_cod
         FROM shopify_orders
-        WHERE created_at BETWEEN :from AND :to
+        WHERE store_id = " . sh_sid() . " AND created_at BETWEEN :from AND :to
         GROUP BY giorno
         ORDER BY giorno ASC
     ");
@@ -160,7 +165,7 @@ function sh_monthly_trend(): array {
             SUM(CASE WHEN is_cod = 1 THEN 1 ELSE 0 END) AS n_cod,
             SUM(CASE WHEN cancelled_at IS NOT NULL THEN 1 ELSE 0 END) AS n_cancellati
         FROM shopify_orders
-        WHERE created_at IS NOT NULL
+        WHERE store_id = " . sh_sid() . " AND created_at IS NOT NULL
         GROUP BY mese
         ORDER BY mese ASC
     ");
@@ -172,7 +177,7 @@ function sh_top_cities(int $from, int $to, int $limit = 10): array {
     $stmt = $pdo->prepare("
         SELECT shipping_city AS citta, COUNT(*) AS n, SUM(total_price) AS fatturato
         FROM shopify_orders
-        WHERE created_at BETWEEN :from AND :to
+        WHERE store_id = " . sh_sid() . " AND created_at BETWEEN :from AND :to
           AND shipping_city IS NOT NULL AND shipping_city != ''
         GROUP BY shipping_city
         ORDER BY n DESC
@@ -194,13 +199,13 @@ function sh_get_order_items(int $orderId): array {
 function sh_set_delivery_status(int $orderId, string $status): void {
     $allowed = ['', 'consegnato', 'in_transito', 'in_lavorazione', 'rientrato', 'cancellato', 'problema'];
     if (!in_array($status, $allowed, true)) return;
-    tracker_db()->prepare("UPDATE shopify_orders SET delivery_status = :s WHERE id = :id")
+    tracker_db()->prepare("UPDATE shopify_orders SET delivery_status = :s WHERE id = :id AND store_id = " . sh_sid() . "")
         ->execute([':s' => $status, ':id' => $orderId]);
 }
 
 function sh_list_orders(array $filters, int $limit = 50, int $offset = 0): array {
     $pdo = tracker_db();
-    $where = ['1=1'];
+    $where = ["store_id = " . sh_sid()];
     $params = [];
 
     if (!empty($filters['from'])) {
@@ -264,7 +269,7 @@ function sh_list_orders(array $filters, int $limit = 50, int $offset = 0): array
 
 function sh_count_orders(array $filters): int {
     $pdo = tracker_db();
-    $where = ['1=1'];
+    $where = ["store_id = " . sh_sid()];
     $params = [];
 
     if (!empty($filters['from'])) { $where[] = 'created_at >= :from'; $params[':from'] = $filters['from']; }
@@ -318,7 +323,7 @@ function sh_costs_for_month(int $year, int $month): array {
             COALESCE(SUM(bonifici_brt), 0)     AS bonifici_brt,
             GROUP_CONCAT(CASE WHEN note IS NOT NULL AND note != '' THEN substr(date,9,2) || ': ' || note END, ' · ') AS note
         FROM shopify_costs_daily
-        WHERE date LIKE :pat
+        WHERE store_id = " . sh_sid() . " AND date LIKE :pat
     ");
     $stmt->execute([':pat' => sprintf('%04d-%02d-%%', $year, $month)]);
     $r = $stmt->fetch() ?: [];
@@ -332,7 +337,7 @@ function sh_costs_for_month(int $year, int $month): array {
 
 function sh_costs_for_day(string $date): array {
     $pdo = tracker_db();
-    $stmt = $pdo->prepare("SELECT * FROM shopify_costs_daily WHERE date = :d");
+    $stmt = $pdo->prepare("SELECT * FROM shopify_costs_daily WHERE store_id = " . sh_sid() . " AND date = :d");
     $stmt->execute([':d' => $date]);
     return $stmt->fetch() ?: [
         'date' => $date,
@@ -344,7 +349,7 @@ function sh_costs_for_day(string $date): array {
 
 function sh_costs_days_for_month(int $year, int $month): array {
     $pdo = tracker_db();
-    $stmt = $pdo->prepare("SELECT * FROM shopify_costs_daily WHERE date LIKE :pat ORDER BY date ASC");
+    $stmt = $pdo->prepare("SELECT * FROM shopify_costs_daily WHERE store_id = " . sh_sid() . " AND date LIKE :pat ORDER BY date ASC");
     $stmt->execute([':pat' => sprintf('%04d-%02d-%%', $year, $month)]);
     $rows = $stmt->fetchAll() ?: [];
     $map = [];
@@ -354,7 +359,7 @@ function sh_costs_days_for_month(int $year, int $month): array {
 
 function sh_costs_all_years(): array {
     $pdo = tracker_db();
-    $rows = $pdo->query("SELECT DISTINCT substr(date,1,4) AS year FROM shopify_costs_daily ORDER BY year DESC")->fetchAll();
+    $rows = $pdo->query("SELECT DISTINCT substr(date,1,4) AS year FROM shopify_costs_daily WHERE store_id = " . sh_sid() . " ORDER BY year DESC")->fetchAll();
     return array_map(fn($r) => (int)$r['year'], $rows);
 }
 
@@ -362,9 +367,9 @@ function sh_costs_upsert_day(string $date, array $vals): void {
     $pdo = tracker_db();
     $stmt = $pdo->prepare("
         INSERT INTO shopify_costs_daily
-            (date, spese_spedizione, spesa_merce, spesa_ads, spesa_influencer, spesa_team, spese_varie, bonifici_brt, note, updated_at)
-        VALUES (:d, :sped, :merce, :ads, :inf, :team, :varie, :brt, :note, :upd)
-        ON CONFLICT(date) DO UPDATE SET
+            (store_id, date, spese_spedizione, spesa_merce, spesa_ads, spesa_influencer, spesa_team, spese_varie, bonifici_brt, note, updated_at)
+        VALUES (:sid, :d, :sped, :merce, :ads, :inf, :team, :varie, :brt, :note, :upd)
+        ON CONFLICT(store_id, date) DO UPDATE SET
             spese_spedizione = excluded.spese_spedizione,
             spesa_merce      = excluded.spesa_merce,
             spesa_ads        = excluded.spesa_ads,
@@ -376,6 +381,7 @@ function sh_costs_upsert_day(string $date, array $vals): void {
             updated_at       = excluded.updated_at
     ");
     $stmt->execute([
+        ':sid'   => sh_sid(),
         ':d'     => $date,
         ':sped'  => (float)($vals['spese_spedizione'] ?? 0),
         ':merce' => (float)($vals['spesa_merce'] ?? 0),
@@ -422,7 +428,7 @@ function sh_variants_catalog(string $search = ''): array {
         FROM shopify_variants v
         JOIN shopify_products p ON p.id = v.product_id
         LEFT JOIN shopify_order_items li ON li.variant_id = v.id
-        WHERE 1=1
+        WHERE v.store_id = " . sh_sid() . "
     ";
     $params = [];
     if ($search !== '') {
@@ -436,12 +442,12 @@ function sh_variants_catalog(string $search = ''): array {
 }
 
 function sh_variant_cost_set(int $variantId, float $cost): void {
-    tracker_db()->prepare("UPDATE shopify_variants SET cost_unit = :c WHERE id = :id")
+    tracker_db()->prepare("UPDATE shopify_variants SET cost_unit = :c WHERE id = :id AND store_id = " . sh_sid() . "")
         ->execute([':c' => $cost, ':id' => $variantId]);
 }
 
 function sh_variant_cost_map(): array {
-    $rows = tracker_db()->query("SELECT id, cost_unit FROM shopify_variants")->fetchAll();
+    $rows = tracker_db()->query("SELECT id, cost_unit FROM shopify_variants WHERE store_id = " . sh_sid() . "")->fetchAll();
     $map = [];
     foreach ($rows as $r) $map[(int)$r['id']] = (float)$r['cost_unit'];
     return $map;
@@ -458,7 +464,7 @@ function sh_cogs_kpi(int $from, int $to, array $unitCosts): array {
             SUM(CASE WHEN is_returned = 1 THEN 1 ELSE 0 END) AS n_rientrati,
             SUM(CASE WHEN (fulfillment_status IS NULL OR fulfillment_status = '' OR fulfillment_status = 'partial') AND is_returned = 0 AND cancelled_at IS NULL THEN 1 ELSE 0 END) AS n_giacenza
         FROM shopify_orders
-        WHERE created_at BETWEEN :from AND :to
+        WHERE store_id = " . sh_sid() . " AND created_at BETWEEN :from AND :to
     ");
     $stmt->execute([':from' => $from, ':to' => $to]);
     $row = $stmt->fetch() ?: ['n_spediti' => 0, 'n_rientrati' => 0, 'n_giacenza' => 0];
@@ -474,7 +480,7 @@ function sh_cogs_kpi(int $from, int $to, array $unitCosts): array {
         FROM shopify_order_items li
         JOIN shopify_orders o ON o.id = li.order_id
         LEFT JOIN shopify_variants v ON v.id = li.variant_id
-        WHERE o.created_at BETWEEN :from AND :to
+        WHERE o.store_id = " . sh_sid() . " AND o.created_at BETWEEN :from AND :to
           AND o.cancelled_at IS NULL
     ");
     $stmt2->execute([':from' => $from, ':to' => $to]);
@@ -559,7 +565,7 @@ function sh_order_pnl(array $order, array $items, array $unitCosts, array $varia
  */
 function sh_pnl_period(int $from, int $to, array $unitCosts): array {
     $pdo = tracker_db();
-    $stmt = $pdo->prepare("SELECT * FROM shopify_orders WHERE created_at BETWEEN :from AND :to");
+    $stmt = $pdo->prepare("SELECT * FROM shopify_orders WHERE store_id = " . sh_sid() . " AND created_at BETWEEN :from AND :to");
     $stmt->execute([':from' => $from, ':to' => $to]);
     $orders = $stmt->fetchAll() ?: [];
     if (empty($orders)) {
@@ -610,7 +616,7 @@ function sh_marketing_costs_period(int $from, int $to): array {
             COALESCE(SUM(spesa_merce), 0)       AS merce,
             COALESCE(SUM(bonifici_brt), 0)      AS brt
         FROM shopify_costs_daily
-        WHERE date >= :from AND date <= :to
+        WHERE store_id = " . sh_sid() . " AND date >= :from AND date <= :to
     ");
     $stmt->execute([':from' => $fromDate, ':to' => $toDate]);
     $r = $stmt->fetch() ?: ['ads'=>0,'team'=>0,'influencer'=>0,'varie'=>0,'spedizione'=>0,'merce'=>0,'brt'=>0];
@@ -629,7 +635,7 @@ function sh_revenue_for_month(int $year, int $month): array {
             COUNT(*) AS n,
             SUM(CASE WHEN is_cod = 1 THEN 1 ELSE 0 END) AS n_cod
         FROM shopify_orders
-        WHERE created_at BETWEEN :from AND :to
+        WHERE store_id = " . sh_sid() . " AND created_at BETWEEN :from AND :to
     ");
     $stmt->execute([':from' => $from, ':to' => $to]);
     return $stmt->fetch() ?: ['lordo' => 0, 'netto' => 0, 'n' => 0, 'n_cod' => 0];

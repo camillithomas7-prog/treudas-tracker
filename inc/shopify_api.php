@@ -11,26 +11,27 @@ declare(strict_types=1);
 const SHOPIFY_API_VERSION = '2024-10';
 const SHOPIFY_SHOP_DOMAIN = 'jdtzzb-7b.myshopify.com';
 
+// Token Admin dello store attivo (per-store, salvato in stores.admin_token).
 function sh_get_token(): ?string {
-    $stmt = tracker_db()->prepare("SELECT value FROM settings WHERE key = 'shopify_admin_token'");
-    $stmt->execute();
-    $v = $stmt->fetchColumn();
-    return ($v !== false && $v !== '') ? (string)$v : null;
+    return function_exists('tr_store_token') ? tr_store_token() : null;
 }
 
+// Dominio myshopify dello store attivo (fallback alla costante storica).
+function sh_shop_domain(): string {
+    if (function_exists('tr_store_current')) {
+        $s = tr_store_current();
+        if (!empty($s['myshopify_domain'])) return (string)$s['myshopify_domain'];
+    }
+    return SHOPIFY_SHOP_DOMAIN;
+}
+
+// Settings per-store (cogs, cursori sync, ecc.) → tabella store_settings.
 function sh_setting_get(string $k): ?string {
-    $stmt = tracker_db()->prepare("SELECT value FROM settings WHERE key = ?");
-    $stmt->execute([$k]);
-    $v = $stmt->fetchColumn();
-    return $v !== false ? (string)$v : null;
+    return function_exists('tr_sset_get') ? tr_sset_get($k) : null;
 }
 
 function sh_setting_set(string $k, string $v): void {
-    $stmt = tracker_db()->prepare("
-        INSERT INTO settings (key, value) VALUES (?, ?)
-        ON CONFLICT(key) DO UPDATE SET value = excluded.value
-    ");
-    $stmt->execute([$k, $v]);
+    if (function_exists('tr_sset_set')) tr_sset_set($k, $v);
 }
 
 /**
@@ -102,7 +103,7 @@ function sh_get(string $url): array {
  * Costruisce URL base Shopify Admin REST per una risorsa.
  */
 function sh_api_url(string $resource, array $query = []): string {
-    $base = 'https://' . SHOPIFY_SHOP_DOMAIN . '/admin/api/' . SHOPIFY_API_VERSION . '/' . ltrim($resource, '/');
+    $base = 'https://' . sh_shop_domain() . '/admin/api/' . SHOPIFY_API_VERSION . '/' . ltrim($resource, '/');
     if (!empty($query)) {
         $base .= (str_contains($base, '?') ? '&' : '?') . http_build_query($query);
     }

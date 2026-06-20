@@ -38,7 +38,10 @@ $cfg = tracker_config();
 // Cerca prima nelle settings DB
 tracker_install_schema();
 $dbSecret = tracker_db()->query("SELECT value FROM settings WHERE key = 'shopify_webhook_secret'")->fetchColumn();
-$secret   = $dbSecret ?: ($cfg['shopify_webhook_secret'] ?? '');
+$shopDomain = $_SERVER['HTTP_X_SHOPIFY_SHOP_DOMAIN'] ?? '';
+$wStore     = ($shopDomain && function_exists('tr_store_by_domain')) ? tr_store_by_domain($shopDomain) : null;
+$storeId    = $wStore ? (int)$wStore['id'] : 1;
+$secret     = ($wStore && !empty($wStore['webhook_secret'])) ? $wStore['webhook_secret'] : ($dbSecret ?: ($cfg['shopify_webhook_secret'] ?? ''));
 $hmac     = $_SERVER['HTTP_X_SHOPIFY_HMAC_SHA256'] ?? '';
 
 $secretPrefix = $secret ? substr($secret, 0, 6) . '...' . substr($secret, -4) : '(none)';
@@ -110,10 +113,10 @@ try {
 
     $stmt = $db->prepare("
         INSERT INTO orders (
-            shopify_order_id, session_id, order_number, total_price, currency,
+            shopify_order_id, store_id, session_id, order_number, total_price, currency,
             email, financial_status, created_at, received_at,
             utm_source, utm_medium, utm_campaign, raw_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(shopify_order_id) DO UPDATE SET
             session_id       = COALESCE(session_id, excluded.session_id),
             total_price      = excluded.total_price,
@@ -124,7 +127,7 @@ try {
             raw_json         = excluded.raw_json
     ");
     $stmt->execute([
-        $orderId, $sessionId, $orderNum, $total, $currency,
+        $orderId, $storeId, $sessionId, $orderNum, $total, $currency,
         $email, $finStatus, $createdAt, time(),
         $utm['utm_source'], $utm['utm_medium'], $utm['utm_campaign'],
         $raw,
@@ -141,10 +144,10 @@ try {
                 'currency'    => $currency,
             ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
             $ev = $db->prepare("
-                INSERT INTO events (session_id, event_type, ts, client_ts, url, meta_json)
-                VALUES (?, 'purchase', ?, ?, ?, ?)
+                INSERT INTO events (store_id, session_id, event_type, ts, client_ts, url, meta_json)
+                VALUES (?, ?, 'purchase', ?, ?, ?, ?)
             ");
-            $ev->execute([$sessionId, time(), $createdAt, '/checkout/thank_you', $meta]);
+            $ev->execute([$storeId, $sessionId, time(), $createdAt, '/checkout/thank_you', $meta]);
         }
     }
 

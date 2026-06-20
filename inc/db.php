@@ -327,4 +327,112 @@ function tracker_install_schema(): void {
     ");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_soi_product ON shopify_order_items(product_id);");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_soi_order ON shopify_order_items(order_id);");
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  MULTI-STORE — tabella stores + store_settings + colonne store_id
+    //  Migrazione non distruttiva: tutto il dato esistente → store #1.
+    // ═══════════════════════════════════════════════════════════════════
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS stores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            slug TEXT NOT NULL UNIQUE,
+            myshopify_domain TEXT,
+            public_domain TEXT,
+            admin_token TEXT,
+            webhook_secret TEXT,
+            track_key TEXT,
+            currency TEXT NOT NULL DEFAULT 'EUR',
+            color TEXT NOT NULL DEFAULT '#f59e0b',
+            position INTEGER NOT NULL DEFAULT 0,
+            archived INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER
+        );
+    ");
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS store_settings (
+            store_id INTEGER NOT NULL,
+            key TEXT NOT NULL,
+            value TEXT,
+            PRIMARY KEY (store_id, key)
+        );
+    ");
+
+    $hasCol = function(string $t, string $c) use ($pdo): bool {
+        foreach ($pdo->query("PRAGMA table_info($t)")->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            if (($r['name'] ?? '') === $c) return true;
+        }
+        return false;
+    };
+
+    // store_id su tutte le tabelle dati (default 1 = store storico)
+    foreach (['shopify_orders','shopify_products','shopify_variants','shopify_order_items','sessions','events','orders'] as $t) {
+        if (!$hasCol($t, 'store_id')) {
+            $pdo->exec("ALTER TABLE $t ADD COLUMN store_id INTEGER NOT NULL DEFAULT 1");
+            $pdo->exec("CREATE INDEX IF NOT EXISTS idx_{$t}_store ON $t(store_id)");
+        }
+    }
+
+    // shopify_costs: rebuild con PK (store_id, year, month)
+    if (!$hasCol('shopify_costs', 'store_id')) {
+        $pdo->exec("ALTER TABLE shopify_costs RENAME TO shopify_costs_old");
+        $pdo->exec("CREATE TABLE shopify_costs (
+            store_id INTEGER NOT NULL DEFAULT 1, year INTEGER NOT NULL, month INTEGER NOT NULL,
+            spese_spedizione REAL DEFAULT 0, spesa_merce REAL DEFAULT 0, spesa_ads REAL DEFAULT 0,
+            spesa_influencer REAL DEFAULT 0, spesa_team REAL DEFAULT 0, spese_varie REAL DEFAULT 0,
+            bonifici_brt REAL DEFAULT 0, note TEXT, updated_at INTEGER,
+            PRIMARY KEY (store_id, year, month)
+        )");
+        $pdo->exec("INSERT INTO shopify_costs (store_id,year,month,spese_spedizione,spesa_merce,spesa_ads,spesa_influencer,spesa_team,spese_varie,bonifici_brt,note,updated_at)
+            SELECT 1,year,month,spese_spedizione,spesa_merce,spesa_ads,spesa_influencer,spesa_team,spese_varie,bonifici_brt,note,updated_at FROM shopify_costs_old");
+        $pdo->exec("DROP TABLE shopify_costs_old");
+    }
+
+    // shopify_costs_daily: rebuild con PK (store_id, date)
+    if (!$hasCol('shopify_costs_daily', 'store_id')) {
+        $pdo->exec("ALTER TABLE shopify_costs_daily RENAME TO shopify_costs_daily_old");
+        $pdo->exec("CREATE TABLE shopify_costs_daily (
+            store_id INTEGER NOT NULL DEFAULT 1, date TEXT NOT NULL,
+            spese_spedizione REAL DEFAULT 0, spesa_merce REAL DEFAULT 0, spesa_ads REAL DEFAULT 0,
+            spesa_influencer REAL DEFAULT 0, spesa_team REAL DEFAULT 0, spese_varie REAL DEFAULT 0,
+            bonifici_brt REAL DEFAULT 0, note TEXT, updated_at INTEGER,
+            PRIMARY KEY (store_id, date)
+        )");
+        $pdo->exec("CREATE INDEX IF NOT EXISTS idx_scd_date ON shopify_costs_daily(date)");
+        $pdo->exec("CREATE INDEX IF NOT EXISTS idx_scd_store ON shopify_costs_daily(store_id)");
+        $pdo->exec("INSERT INTO shopify_costs_daily (store_id,date,spese_spedizione,spesa_merce,spesa_ads,spesa_influencer,spesa_team,spese_varie,bonifici_brt,note,updated_at)
+            SELECT 1,date,spese_spedizione,spesa_merce,spesa_ads,spesa_influencer,spesa_team,spese_varie,bonifici_brt,note,updated_at FROM shopify_costs_daily_old");
+        $pdo->exec("DROP TABLE shopify_costs_daily_old");
+    }
+
+    // Seed store #1 (TREUDAS storico) + migra chiavi per-store da settings → store_settings
+    $nStores = (int)$pdo->query("SELECT COUNT(*) FROM stores")->fetchColumn();
+    if ($nStores === 0) {
+        $cfg = tracker_config();
+        $mysh = ''; $pub = '';
+        foreach (($cfg['allowed_origins'] ?? []) as $o) {
+            $h = preg_replace('#^https?://#', '', (string)$o);
+            if (stripos($h, 'myshopify.com') !== false) { if (!$mysh) $mysh = $h; }
+            elseif (stripos($h, 'www.') !== 0)          { if (!$pub)  $pub  = $h; }
+        }
+        $tok = $pdo->query("SELECT value FROM settings WHERE key='shopify_admin_token'")->fetchColumn() ?: null;
+        $sec = $pdo->query("SELECT value FROM settings WHERE key='shopify_webhook_secret'")->fetchColumn();
+        if (!$sec) $sec = $cfg['shopify_webhook_secret'] ?? null;
+        $pdo->prepare("INSERT INTO stores (id,name,slug,myshopify_domain,public_domain,admin_token,webhook_secret,track_key,currency,color,position,created_at)
+            VALUES (1,'TREUDAS','treudas',?,?,?,?,?,'EUR','#f59e0b',0,?)")
+            ->execute([$mysh ?: null, $pub ?: null, $tok, ($sec ?: null), bin2hex(random_bytes(8)), time()]);
+
+        $perStoreKeys = ['cogs_shipping_per_order','cogs_return_per_order','cogs_stock_per_order',
+            'shopify_sync_updated_at_min','shopify_sync_last_run_at','shopify_sync_last_count',
+            'shopify_products_last_sync','shopify_products_last_count','shopify_variants_last_count','shopify_admin_token'];
+        $sel  = $pdo->prepare("SELECT value FROM settings WHERE key=?");
+        $insS = $pdo->prepare("INSERT OR IGNORE INTO store_settings (store_id,key,value) VALUES (1,?,?)");
+        foreach ($perStoreKeys as $k) {
+            $sel->execute([$k]); $v = $sel->fetchColumn();
+            if ($v !== false) $insS->execute([$k, (string)$v]);
+        }
+    }
 }
+
+// Helper multi-store (sempre disponibili dove è incluso db.php)
+require_once __DIR__ . "/stores.php";

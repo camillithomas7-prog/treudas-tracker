@@ -77,11 +77,12 @@ function sh_sync_orders(bool $fullRebuild = false): array {
 
 function sh_upsert_order_items(int $orderId, array $items): void {
     $pdo = tracker_db();
+    $sid = sh_sid();
     $pdo->prepare("DELETE FROM shopify_order_items WHERE order_id = ?")->execute([$orderId]);
     if (empty($items)) return;
     $stmt = $pdo->prepare("
-        INSERT INTO shopify_order_items (order_id, line_id, product_id, variant_id, title, variant_title, quantity, price)
-        VALUES (:oid, :lid, :pid, :vid, :title, :vtitle, :qty, :price)
+        INSERT INTO shopify_order_items (store_id, order_id, line_id, product_id, variant_id, title, variant_title, quantity, price)
+        VALUES (:sid, :oid, :lid, :pid, :vid, :title, :vtitle, :qty, :price)
         ON CONFLICT(order_id, line_id) DO UPDATE SET
             product_id = excluded.product_id,
             variant_id = excluded.variant_id,
@@ -92,6 +93,7 @@ function sh_upsert_order_items(int $orderId, array $items): void {
     ");
     foreach ($items as $li) {
         $stmt->execute([
+            ':sid'    => $sid,
             ':oid'    => $orderId,
             ':lid'    => (int)($li['id'] ?? 0),
             ':pid'    => isset($li['product_id']) ? (int)$li['product_id'] : null,
@@ -111,10 +113,11 @@ function sh_sync_products(): array {
     $total = 0;
     $totalVariants = 0;
     $pdo = tracker_db();
+    $sid = sh_sid();
 
     $stmtP = $pdo->prepare("
-        INSERT INTO shopify_products (id, title, handle, status, product_type, image_url, synced_at, shop_updated_at)
-        VALUES (:id, :title, :handle, :status, :ptype, :img, :synced, :shopupd)
+        INSERT INTO shopify_products (id, store_id, title, handle, status, product_type, image_url, synced_at, shop_updated_at)
+        VALUES (:id, :sid, :title, :handle, :status, :ptype, :img, :synced, :shopupd)
         ON CONFLICT(id) DO UPDATE SET
             title = excluded.title,
             handle = excluded.handle,
@@ -126,8 +129,8 @@ function sh_sync_products(): array {
     ");
 
     $stmtV = $pdo->prepare("
-        INSERT INTO shopify_variants (id, product_id, title, sku, price, position, synced_at)
-        VALUES (:id, :pid, :title, :sku, :price, :pos, :synced)
+        INSERT INTO shopify_variants (id, store_id, product_id, title, sku, price, position, synced_at)
+        VALUES (:id, :sid, :pid, :title, :sku, :price, :pos, :synced)
         ON CONFLICT(id) DO UPDATE SET
             product_id = excluded.product_id,
             title = excluded.title,
@@ -150,6 +153,7 @@ function sh_sync_products(): array {
         foreach (($r['body']['products'] ?? []) as $p) {
             $stmtP->execute([
                 ':id'      => (int)$p['id'],
+                ':sid'     => $sid,
                 ':title'   => (string)($p['title'] ?? ''),
                 ':handle'  => (string)($p['handle'] ?? ''),
                 ':status'  => (string)($p['status'] ?? ''),
@@ -163,6 +167,7 @@ function sh_sync_products(): array {
             foreach (($p['variants'] ?? []) as $v) {
                 $stmtV->execute([
                     ':id'     => (int)$v['id'],
+                    ':sid'    => $sid,
                     ':pid'    => (int)$p['id'],
                     ':title'  => (string)($v['title'] ?? ''),
                     ':sku'    => (string)($v['sku'] ?? ''),
@@ -214,7 +219,7 @@ function sh_upsert_order(array $o): void {
 
     $stmt = $pdo->prepare("
         INSERT INTO shopify_orders (
-            id, order_number, name, email, phone,
+            id, store_id, order_number, name, email, phone,
             customer_first_name, customer_last_name,
             created_at, cancelled_at, closed_at,
             financial_status, fulfillment_status,
@@ -225,7 +230,7 @@ function sh_upsert_order(array $o): void {
             tags, is_returned, line_items_json, raw_json,
             synced_at, shop_updated_at
         ) VALUES (
-            :id, :order_number, :name, :email, :phone,
+            :id, :sid, :order_number, :name, :email, :phone,
             :cfn, :cln,
             :created_at, :cancelled_at, :closed_at,
             :fin, :ful,
@@ -277,6 +282,7 @@ function sh_upsert_order(array $o): void {
 
     $stmt->execute([
         ':id'           => (int)$o['id'],
+        ':sid'          => sh_sid(),
         ':order_number' => (string)($o['order_number'] ?? ''),
         ':name'         => (string)($o['name'] ?? ''),
         ':email'        => (string)($o['email'] ?? ''),
