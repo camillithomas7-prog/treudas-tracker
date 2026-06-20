@@ -121,10 +121,12 @@ function tr_store_upsert(array $d): int {
     $slug = trim($slug, '-') ?: 'store';
     $fields = [
         'name'             => (string)($d['name'] ?? 'Store'),
-        'myshopify_domain' => $d['myshopify_domain'] !== '' ? strtolower(trim(preg_replace('#^https?://#', '', (string)($d['myshopify_domain'] ?? '')))) : null,
-        'public_domain'    => $d['public_domain'] !== '' ? strtolower(trim(preg_replace('#^https?://#', '', (string)($d['public_domain'] ?? '')))) : null,
+        'myshopify_domain' => ($d['myshopify_domain'] ?? '') !== '' ? strtolower(trim(preg_replace('#^https?://#', '', (string)$d['myshopify_domain']))) : null,
+        'public_domain'    => ($d['public_domain'] ?? '') !== '' ? strtolower(trim(preg_replace('#^https?://#', '', (string)$d['public_domain']))) : null,
         'admin_token'      => ($d['admin_token'] ?? '') !== '' ? (string)$d['admin_token'] : null,
         'webhook_secret'   => ($d['webhook_secret'] ?? '') !== '' ? (string)$d['webhook_secret'] : null,
+        'client_id'        => ($d['client_id'] ?? '') !== '' ? trim((string)$d['client_id']) : null,
+        'client_secret'    => ($d['client_secret'] ?? '') !== '' ? trim((string)$d['client_secret']) : null,
         'currency'         => (string)($d['currency'] ?? 'EUR'),
         'color'            => (string)($d['color'] ?? '#f59e0b'),
         'archived'         => (int)($d['archived'] ?? 0),
@@ -135,7 +137,7 @@ function tr_store_upsert(array $d): int {
         // non sovrascrivere token/secret se lasciati vuoti in update
         $set = []; $args = [];
         foreach ($fields as $k => $v) {
-            if (($k === 'admin_token' || $k === 'webhook_secret') && $v === null) continue;
+            if (in_array($k, ['admin_token','webhook_secret','client_id','client_secret'], true) && $v === null) continue;
             $set[] = "$k = ?"; $args[] = $v;
         }
         $args[] = $id;
@@ -147,10 +149,10 @@ function tr_store_upsert(array $d): int {
     $base = $slug; $i = 2;
     while (tr_store_by_slug($slug)) { $slug = $base . '-' . $i; $i++; }
     $pos = (int)$db->query("SELECT COALESCE(MAX(position),0)+1 FROM stores")->fetchColumn();
-    $db->prepare("INSERT INTO stores (name,slug,myshopify_domain,public_domain,admin_token,webhook_secret,track_key,currency,color,position,archived,created_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)")
+    $db->prepare("INSERT INTO stores (name,slug,myshopify_domain,public_domain,admin_token,webhook_secret,client_id,client_secret,track_key,currency,color,position,archived,created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
         ->execute([$fields['name'],$slug,$fields['myshopify_domain'],$fields['public_domain'],$fields['admin_token'],$fields['webhook_secret'],
-            bin2hex(random_bytes(8)),$fields['currency'],$fields['color'],$pos,$fields['archived'],time()]);
+            $fields['client_id'],$fields['client_secret'],bin2hex(random_bytes(8)),$fields['currency'],$fields['color'],$pos,$fields['archived'],time()]);
     return (int)$db->lastInsertId();
 }
 

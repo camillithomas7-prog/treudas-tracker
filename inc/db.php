@@ -365,6 +365,11 @@ function tracker_install_schema(): void {
         return false;
     };
 
+    // Credenziali OAuth per-store (client_id + client_secret dell'app Dev Dashboard)
+    foreach (['client_id', 'client_secret'] as $c) {
+        if (!$hasCol('stores', $c)) $pdo->exec("ALTER TABLE stores ADD COLUMN $c TEXT");
+    }
+
     // store_id su tutte le tabelle dati (default 1 = store storico)
     foreach (['shopify_orders','shopify_products','shopify_variants','shopify_order_items','sessions','events','orders'] as $t) {
         if (!$hasCol($t, 'store_id')) {

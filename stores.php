@@ -109,12 +109,22 @@ code.k{font-size:11px;color:var(--accent-2,#8be9fd);word-break:break-all;}
                         <input type="text" name="public_domain" placeholder="ilmiostore.com" value="<?= tr_h($edit['public_domain'] ?? '') ?>">
                     </label>
                 </div>
-                <label class="fld">Token Admin API (shpat_…)
-                    <input type="text" name="admin_token" placeholder="<?= $edit ? '•••• lascia vuoto per non modificare' : 'shpat_...' ?>">
-                </label>
-                <label class="fld">Webhook secret (orders/paid)
+                <div class="row2">
+                    <label class="fld">Client ID (app Dev Dashboard)
+                        <input type="text" name="client_id" placeholder="<?= $edit && !empty($edit['client_id']) ? tr_h($edit['client_id']) : 'es. 0a28fb90…' ?>" value="<?= tr_h($edit['client_id'] ?? '') ?>">
+                    </label>
+                    <label class="fld">Client Secret (shpss_…)
+                        <input type="text" name="client_secret" placeholder="<?= $edit ? '•••• lascia vuoto per non modificare' : 'shpss_...' ?>">
+                    </label>
+                </div>
+                <label class="fld">Webhook secret <span style="opacity:.6">(opzionale, per ordini realtime)</span>
                     <input type="text" name="webhook_secret" placeholder="<?= $edit ? '•••• lascia vuoto per non modificare' : 'secret del webhook' ?>">
                 </label>
+                <details style="margin-bottom:13px;"><summary style="cursor:pointer;font-size:12px;color:var(--text-dim,#9aa6bf);">Token Admin API manuale (avanzato, se ce l'hai già)</summary>
+                    <label class="fld" style="margin-top:8px;">Token Admin API (shpat_…)
+                        <input type="text" name="admin_token" placeholder="<?= $edit ? '•••• lascia vuoto per non modificare' : 'shpat_...' ?>">
+                    </label>
+                </details>
                 <div class="row2">
                     <label class="fld">Valuta
                         <select name="currency">
@@ -136,10 +146,12 @@ code.k{font-size:11px;color:var(--accent-2,#8be9fd);word-break:break-all;}
             </form>
 
             <div class="hint">
-                <strong>Per collegarlo:</strong><br>
-                1. Shopify Admin → <strong>Apps → Develop apps</strong> → crea app custom → scopes <code class="k">read_orders, read_products</code> → installa → copia l'<strong>Admin API access token</strong> (<code class="k">shpat_…</code>) qui sopra.<br>
-                2. <strong>Settings → Notifications → Webhooks</strong> → crea webhook <code class="k">Order payment</code> (JSON) → URL: <code class="k"><?= tr_h($webhookUrl) ?></code> → copia il secret qui sopra.<br>
-                3. (Funnel tracker, opzionale) snippet nel tema con endpoint <code class="k"><?= tr_h($trackUrl) ?></code> e la tua <code class="k">track_key</code> (vedi a destra).
+                <strong>Per collegarlo (flusso OAuth, come TREUDAS):</strong><br>
+                1. Su <strong>dev.shopify.com</strong> (Dev Dashboard) → crea/usa un'app → versione con scopes <code class="k">read_orders,read_products</code> → <strong>Rilascia</strong>.<br>
+                2. Nell'app → <strong>Impostazioni</strong>: copia <strong>ID client</strong> e <strong>Segreto</strong> (<code class="k">shpss_…</code>) → incollali qui sopra, insieme al <strong>dominio myshopify</strong> → <strong>Crea store</strong>.<br>
+                3. ⚠️ Sempre nell'app, nella sezione versione/Accesso, aggiungi questo <strong>URL di reindirizzamento</strong>:<br><code class="k"><?= tr_h($scheme . '://' . $host . '/oauth_callback.php') ?></code><br>
+                4. Poi qui a destra clicca <strong>Connetti</strong> sullo store → autorizza su Shopify → il token viene salvato in automatico. ✅<br>
+                <span style="opacity:.7">Webhook (opzionale, realtime): <code class="k">Order payment</code> JSON → URL <code class="k"><?= tr_h($webhookUrl) ?></code>. Funnel tracker (opzionale): endpoint <code class="k"><?= tr_h($trackUrl) ?></code> con la <code class="k">track_key</code>.</span>
             </div>
         </div>
 
@@ -153,9 +165,12 @@ code.k{font-size:11px;color:var(--accent-2,#8be9fd);word-break:break-all;}
                     <div class="nm"><?= tr_h($s['name']) ?> <span class="meta"><?= tr_h($s['currency']) ?></span>
                         <?php if ($s['archived']): ?><span class="tag-arch">archiviato</span><?php endif; ?>
                     </div>
-                    <div class="meta"><?= tr_h($s['myshopify_domain'] ?: '—') ?> · <?= !empty($s['admin_token']) ? 'token ✓' : 'token mancante' ?> · key <code class="k"><?= tr_h($s['track_key']) ?></code></div>
+                    <div class="meta"><?= tr_h($s['myshopify_domain'] ?: '—') ?> · <?= !empty($s['admin_token']) ? '<span style="color:#34d399">connesso ✓</span>' : (!empty($s['client_id']) ? '<span style="color:#fbbf24">pronto, da connettere</span>' : 'da configurare') ?> · key <code class="k"><?= tr_h($s['track_key']) ?></code></div>
                 </div>
                 <div class="act">
+                    <?php if (!$s['archived'] && !empty($s['client_id']) && !empty($s['myshopify_domain'])): ?>
+                        <a href="/oauth_start.php?store=<?= (int)$s['id'] ?>" style="background:linear-gradient(135deg,#ffb347,#f59e0b);color:#10131c;font-weight:800;border-color:transparent;"><?= !empty($s['admin_token']) ? 'Riconnetti' : 'Connetti' ?></a>
+                    <?php endif; ?>
                     <a href="/statistiche.php?store=<?= tr_h($s['slug']) ?>">Apri</a>
                     <a href="/stores.php?edit=<?= (int)$s['id'] ?>">Modifica</a>
                     <?php if ($s['archived']): ?>
