@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/inc/db.php';
 require_once __DIR__ . '/inc/helpers.php';
 require_once __DIR__ . '/inc/shopify_api.php';
+require_once __DIR__ . '/inc/shopify_sync.php';
 require_once __DIR__ . '/inc/shopify_stats.php';
 
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0, private');
@@ -29,6 +30,8 @@ $rows = [];
 foreach ($stores as $s) {
     $sid = (int)$s['id'];
     $m = tr_store_with($sid, function () use ($from, $to) {
+        // Auto-sync throttled: tira giù gli ordini dello store (no-op se sync recente)
+        if (sh_get_token()) { try { sh_sync_orders_throttled(300); } catch (Throwable $e) {} }
         $unit = sh_cogs_unit_costs();
         $pnl  = sh_pnl_period($from, $to, $unit);
         $mkt  = sh_marketing_costs_period($from, $to);
