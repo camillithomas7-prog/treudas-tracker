@@ -149,7 +149,10 @@ code.k{font-size:11px;color:var(--accent-2,#8be9fd);word-break:break-all;}
                 <strong>Per collegarlo (flusso OAuth, come TREUDAS):</strong><br>
                 1. Su <strong>dev.shopify.com</strong> (Dev Dashboard) → crea/usa un'app → versione con scopes <code class="k">read_orders,read_products</code> → <strong>Rilascia</strong>.<br>
                 2. Nell'app → <strong>Impostazioni</strong>: copia <strong>ID client</strong> e <strong>Segreto</strong> (<code class="k">shpss_…</code>) → incollali qui sopra, insieme al <strong>dominio myshopify</strong> → <strong>Crea store</strong>.<br>
-                3. ⚠️ Sempre nell'app, nella sezione versione/Accesso, aggiungi questo <strong>URL di reindirizzamento</strong>:<br><code class="k"><?= tr_h($scheme . '://' . $host . '/oauth_callback.php') ?></code><br>
+                3. ⚠️ Sempre nell'app → <strong>Crea versione</strong> → sezione <strong>URL</strong>: metti lo <u>stesso host</u> in <strong>DUE</strong> campi (altrimenti l'errore <em>"redirect_uri and application url must have matching hosts"</em>):<br>
+                &nbsp;&nbsp;• <strong>URL app:</strong> <code class="k"><?= tr_h($scheme . '://' . $host) ?></code><br>
+                &nbsp;&nbsp;• <strong>URL di reindirizzamento:</strong> <code class="k"><?= tr_h($scheme . '://' . $host . '/oauth_callback.php') ?></code><br>
+                &nbsp;&nbsp;→ <strong>Rilascia</strong> la versione.<br>
                 4. Poi qui a destra clicca <strong>Connetti</strong> sullo store → autorizza su Shopify → il token viene salvato in automatico. ✅<br>
                 <span style="opacity:.7">Webhook (opzionale, realtime): <code class="k">Order payment</code> JSON → URL <code class="k"><?= tr_h($webhookUrl) ?></code>. Funnel tracker (opzionale): endpoint <code class="k"><?= tr_h($trackUrl) ?></code> con la <code class="k">track_key</code>.</span>
             </div>
