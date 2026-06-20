@@ -52,6 +52,19 @@ foreach ($stores as $s) {
     });
     $m['store'] = $s;
     $m['has_token'] = !empty($s['admin_token']);
+
+    // Valuta REALE rilevata dagli ordini Shopify (fallback a quella configurata).
+    // Auto-corregge la valuta dello store così il raggruppamento è sempre giusto.
+    $rcStmt = tracker_db()->prepare("SELECT currency FROM shopify_orders WHERE store_id = ? AND currency IS NOT NULL AND currency != '' GROUP BY currency ORDER BY COUNT(*) DESC LIMIT 1");
+    $rcStmt->execute([$sid]);
+    $realCur = $rcStmt->fetchColumn();
+    if ($realCur) {
+        $m['store']['currency'] = $realCur;
+        if ($realCur !== ($s['currency'] ?? '')) {
+            tracker_db()->prepare("UPDATE stores SET currency = ? WHERE id = ?")->execute([$realCur, $sid]);
+        }
+    }
+
     $rows[] = $m;
 }
 
