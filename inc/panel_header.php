@@ -14,7 +14,7 @@ $__curColor = $__cur['color'] ?? '#f59e0b';
         <?php if ($panel_active !== 'dashboard' && !empty($__stores)): ?>
         <div class="store-switch" style="display:flex;align-items:center;gap:7px;background:var(--bg-card-2,#161b2e);border:1px solid var(--border,#26304a);border-radius:9px;padding:5px 10px;">
             <span style="width:9px;height:9px;border-radius:50%;background:<?= htmlspecialchars($__curColor) ?>;box-shadow:0 0 8px <?= htmlspecialchars($__curColor) ?>;flex:0 0 auto;"></span>
-            <select onchange="var u=new URL(location);u.searchParams.set('store',this.value);location=u;"
+            <select id="storeSwitch" autocomplete="off" onchange="var u=new URL(location.href);u.searchParams.set('store',this.value);location.assign(u.toString());"
                     style="background:transparent;border:0;color:var(--text,#e7ecf5);font-size:14px;font-weight:700;cursor:pointer;outline:none;max-width:200px;">
                 <?php foreach ($__stores as $s): ?>
                     <option value="<?= htmlspecialchars($s['slug']) ?>" <?= (int)$s['id'] === (int)$__cur['id'] ? 'selected' : '' ?>>
@@ -22,6 +22,7 @@ $__curColor = $__cur['color'] ?? '#f59e0b';
                     </option>
                 <?php endforeach; ?>
             </select>
+            <script>(function(){var sw=document.getElementById('storeSwitch');if(sw)sw.value=<?= json_encode($__cur['slug'] ?? '') ?>;})();</script>
         </div>
         <?php endif; ?>
     </div>

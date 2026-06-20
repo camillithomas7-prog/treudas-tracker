@@ -91,21 +91,21 @@ $panel_active = 'statistiche';
         <div class="kpi">
             <div class="kpi-label">Ordini generati</div>
             <div class="kpi-value"><?= number_format($n, 0, ',', '.') ?></div>
-            <div class="kpi-sub">AOV € <?= number_format($aov, 2, ',', '.') ?></div>
+            <div class="kpi-sub">AOV <?= tr_cur_sym() ?> <?= number_format($aov, 2, ',', '.') ?></div>
         </div>
         <div class="kpi">
             <div class="kpi-label">Ricavo (post resi)</div>
-            <div class="kpi-value" style="color: var(--pos);">€ <?= number_format($revenue, 2, ',', '.') ?></div>
-            <div class="kpi-sub">lordo: € <?= number_format((float)$kpiBase['lordo'], 2, ',', '.') ?></div>
+            <div class="kpi-value" style="color: var(--pos);"><?= tr_cur_sym() ?> <?= number_format($revenue, 2, ',', '.') ?></div>
+            <div class="kpi-sub">lordo: <?= tr_cur_sym() ?> <?= number_format((float)$kpiBase['lordo'], 2, ',', '.') ?></div>
         </div>
         <div class="kpi">
             <div class="kpi-label">COGS totali</div>
-            <div class="kpi-value">€ <?= number_format($cogsBundle + $cogsShipping + $cogsLoss, 2, ',', '.') ?></div>
+            <div class="kpi-value"><?= tr_cur_sym() ?> <?= number_format($cogsBundle + $cogsShipping + $cogsLoss, 2, ',', '.') ?></div>
             <div class="kpi-sub"><?= number_format($cogsPct, 1, ',', '.') ?>% del ricavo</div>
         </div>
         <div class="kpi">
             <div class="kpi-label">Margine lordo</div>
-            <div class="kpi-value" style="color: <?= $grossMargin >= 0 ? 'var(--pos)' : 'var(--neg)' ?>;">€ <?= number_format($grossMargin, 2, ',', '.') ?></div>
+            <div class="kpi-value" style="color: <?= $grossMargin >= 0 ? 'var(--pos)' : 'var(--neg)' ?>;"><?= tr_cur_sym() ?> <?= number_format($grossMargin, 2, ',', '.') ?></div>
             <div class="kpi-sub"><?= number_format($marginPct, 1, ',', '.') ?>% (post-COGS)</div>
         </div>
     </section>
@@ -114,13 +114,13 @@ $panel_active = 'statistiche';
     <section class="kpi-grid" style="margin-top: 16px;">
         <div class="kpi">
             <div class="kpi-label">Spesa Ads</div>
-            <div class="kpi-value" style="color: var(--pink);">€ <?= number_format($adsSpend, 2, ',', '.') ?></div>
+            <div class="kpi-value" style="color: var(--pink);"><?= tr_cur_sym() ?> <?= number_format($adsSpend, 2, ',', '.') ?></div>
             <div class="kpi-sub">pro-rata dal <a href="/bilancio.php" style="color: var(--accent-2);">Bilancio</a></div>
         </div>
         <div class="kpi">
             <div class="kpi-label">CPA <small class="muted">(costo per ordine)</small></div>
             <div class="kpi-value" style="color: <?= ($cpa > 0 && $cpa < $aov) ? 'var(--pos)' : 'var(--warn)' ?>;">
-                <?= $cpa > 0 ? '€ ' . number_format($cpa, 2, ',', '.') : '—' ?>
+                <?= $cpa > 0 ? tr_cur_sym() . ' ' . number_format($cpa, 2, ',', '.') : '—' ?>
             </div>
             <div class="kpi-sub"><?= $cpa > 0 ? number_format(($cpa / max(1, $aov)) * 100, 1, ',', '.') . '% AOV' : 'imposta Ads in Bilancio' ?></div>
         </div>
@@ -133,7 +133,7 @@ $panel_active = 'statistiche';
         </div>
         <div class="kpi">
             <div class="kpi-label">Profitto NETTO</div>
-            <div class="kpi-value" style="color: <?= $netProfit >= 0 ? 'var(--pos)' : 'var(--neg)' ?>;">€ <?= number_format($netProfit, 2, ',', '.') ?></div>
+            <div class="kpi-value" style="color: <?= $netProfit >= 0 ? 'var(--pos)' : 'var(--neg)' ?>;"><?= tr_cur_sym() ?> <?= number_format($netProfit, 2, ',', '.') ?></div>
             <div class="kpi-sub"><?= number_format($netPct, 1, ',', '.') ?>% (post-Ads &amp; opex)</div>
         </div>
     </section>
@@ -142,17 +142,17 @@ $panel_active = 'statistiche';
     <section class="kpi-grid" style="margin-top: 16px;">
         <div class="kpi">
             <div class="kpi-label">COGS bundle (fornitore)</div>
-            <div class="kpi-value">€ <?= number_format($cogsBundle, 2, ',', '.') ?></div>
+            <div class="kpi-value"><?= tr_cur_sym() ?> <?= number_format($cogsBundle, 2, ',', '.') ?></div>
             <div class="kpi-sub">somma costo varianti vendute</div>
         </div>
         <div class="kpi">
             <div class="kpi-label">Costo spedizioni</div>
-            <div class="kpi-value">€ <?= number_format($cogsShipping, 2, ',', '.') ?></div>
-            <div class="kpi-sub">€ <?= number_format($unitCosts['shipping'], 2, ',', '.') ?>/ordine spedito</div>
+            <div class="kpi-value"><?= tr_cur_sym() ?> <?= number_format($cogsShipping, 2, ',', '.') ?></div>
+            <div class="kpi-sub"><?= tr_cur_sym() ?> <?= number_format($unitCosts['shipping'], 2, ',', '.') ?>/ordine spedito</div>
         </div>
         <div class="kpi">
             <div class="kpi-label">Perdite rientri</div>
-            <div class="kpi-value" style="color: var(--warn);">€ <?= number_format($cogsLoss, 2, ',', '.') ?></div>
+            <div class="kpi-value" style="color: var(--warn);"><?= tr_cur_sym() ?> <?= number_format($cogsLoss, 2, ',', '.') ?></div>
             <div class="kpi-sub"><?= (int)$kpiBase['n_rientrati'] ?> ordini rientrati</div>
         </div>
         <div class="kpi">
@@ -174,8 +174,8 @@ $panel_active = 'statistiche';
                         <div class="bar-fill" style="width: <?= round($pct, 2) ?>%;"></div>
                     </div>
                     <div class="bar-value">
-                        € <?= number_format((float)$r['revenue'], 0, ',', '.') ?>
-                        · <span style="color: <?= $r['margin'] >= 0 ? 'var(--pos)' : 'var(--neg)' ?>;">€ <?= number_format((float)$r['margin'], 0, ',', '.') ?></span>
+                        <?= tr_cur_sym() ?> <?= number_format((float)$r['revenue'], 0, ',', '.') ?>
+                        · <span style="color: <?= $r['margin'] >= 0 ? 'var(--pos)' : 'var(--neg)' ?>;"><?= tr_cur_sym() ?> <?= number_format((float)$r['margin'], 0, ',', '.') ?></span>
                         <span class="muted"><?= (int)$r['n'] ?> ord.</span>
                     </div>
                 </div>
@@ -216,12 +216,12 @@ $panel_active = 'statistiche';
                         </td>
                         <td class="num" style="color: var(--cyan);"><?= (int)$b['pezzi'] ?></td>
                         <td class="num"><?= (int)$b['ordini'] ?></td>
-                        <td class="num">€ <?= number_format((float)$b['price'], 2, ',', '.') ?></td>
-                        <td class="num">€ <?= number_format((float)$b['cost_unit'], 2, ',', '.') ?></td>
-                        <td class="num">€ <?= number_format((float)$b['ricavo'], 2, ',', '.') ?></td>
-                        <td class="num">€ <?= number_format((float)$b['cogs'], 2, ',', '.') ?></td>
+                        <td class="num"><?= tr_cur_sym() ?> <?= number_format((float)$b['price'], 2, ',', '.') ?></td>
+                        <td class="num"><?= tr_cur_sym() ?> <?= number_format((float)$b['cost_unit'], 2, ',', '.') ?></td>
+                        <td class="num"><?= tr_cur_sym() ?> <?= number_format((float)$b['ricavo'], 2, ',', '.') ?></td>
+                        <td class="num"><?= tr_cur_sym() ?> <?= number_format((float)$b['cogs'], 2, ',', '.') ?></td>
                         <td class="num" style="color: <?= $margin >= 0 ? 'var(--pos)' : 'var(--neg)' ?>; font-weight: 700;">
-                            € <?= number_format($margin, 2, ',', '.') ?>
+                            <?= tr_cur_sym() ?> <?= number_format($margin, 2, ',', '.') ?>
                         </td>
                     </tr>
                 <?php endforeach; ?>
@@ -243,7 +243,7 @@ $panel_active = 'statistiche';
                     <tr>
                         <td><?= tr_h($c['citta']) ?></td>
                         <td class="num"><?= (int)$c['n'] ?></td>
-                        <td class="num">€ <?= number_format((float)$c['fatturato'], 2, ',', '.') ?></td>
+                        <td class="num"><?= tr_cur_sym() ?> <?= number_format((float)$c['fatturato'], 2, ',', '.') ?></td>
                     </tr>
                 <?php endforeach; ?>
                 <?php if (empty($topCit)): ?>
@@ -262,8 +262,8 @@ $panel_active = 'statistiche';
                     <tr>
                         <td><?= tr_h($m['mese']) ?></td>
                         <td class="num"><?= (int)$m['n'] ?></td>
-                        <td class="num">€ <?= number_format((float)$m['fatturato'], 2, ',', '.') ?></td>
-                        <td class="num">€ <?= number_format((float)$m['netto'], 2, ',', '.') ?></td>
+                        <td class="num"><?= tr_cur_sym() ?> <?= number_format((float)$m['fatturato'], 2, ',', '.') ?></td>
+                        <td class="num"><?= tr_cur_sym() ?> <?= number_format((float)$m['netto'], 2, ',', '.') ?></td>
                     </tr>
                 <?php endforeach; ?>
                 <?php if (empty($monthly)): ?>

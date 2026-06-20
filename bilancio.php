@@ -99,9 +99,9 @@ $panel_active = 'bilancio';
             <div>
                 <h2 style="margin: 0;">Spese giornaliere — <?= tr_h($mesiIt[$month]) ?> <?= $year ?></h2>
                 <small class="muted">
-                    Fatturato lordo <strong style="color: var(--pos);">€ <?= number_format((float)$rev['lordo'], 2, ',', '.') ?></strong>
-                    · Netto post resi € <?= number_format((float)$rev['netto'], 2, ',', '.') ?>
-                    · Totale spese mese € <?= number_format($totalCostsMonth, 2, ',', '.') ?>
+                    Fatturato lordo <strong style="color: var(--pos);"><?= tr_cur_sym() ?> <?= number_format((float)$rev['lordo'], 2, ',', '.') ?></strong>
+                    · Netto post resi <?= tr_cur_sym() ?> <?= number_format((float)$rev['netto'], 2, ',', '.') ?>
+                    · Totale spese mese <?= tr_cur_sym() ?> <?= number_format($totalCostsMonth, 2, ',', '.') ?>
                     · <a href="?year=<?= $year ?>" style="color: var(--accent-2);">← Vista mensile</a>
                 </small>
             </div>
@@ -163,7 +163,7 @@ $panel_active = 'bilancio';
                         <td class="num"><input type="text" data-field="spesa_team"       value="<?= number_format((float)$row['spesa_team'], 2, '.', '') ?>"       class="cost-cell"></td>
                         <td class="num"><input type="text" data-field="spese_varie"      value="<?= number_format((float)$row['spese_varie'], 2, '.', '') ?>"      class="cost-cell"></td>
                         <td class="num"><input type="text" data-field="bonifici_brt"     value="<?= number_format((float)$row['bonifici_brt'], 2, '.', '') ?>"     class="cost-cell"></td>
-                        <td class="num row-total">€ <?= number_format($dayTot, 2, ',', '.') ?></td>
+                        <td class="num row-total"><?= tr_cur_sym() ?> <?= number_format($dayTot, 2, ',', '.') ?></td>
                         <td><input type="text" data-field="note" value="<?= tr_h((string)($row['note'] ?? '')) ?>" class="note-cell" placeholder="…"></td>
                     </tr>
                 <?php endfor; ?>
@@ -178,7 +178,7 @@ $panel_active = 'bilancio';
                         <td class="num"><?= number_format($tot['tm'], 2, ',', '.') ?></td>
                         <td class="num"><?= number_format($tot['va'], 2, ',', '.') ?></td>
                         <td class="num"><?= number_format($tot['br'], 2, ',', '.') ?></td>
-                        <td class="num" style="color: var(--accent-2);">€ <?= number_format($tot['tt'], 2, ',', '.') ?></td>
+                        <td class="num" style="color: var(--accent-2);"><?= tr_cur_sym() ?> <?= number_format($tot['tt'], 2, ',', '.') ?></td>
                         <td></td>
                     </tr>
                 </tfoot>
@@ -246,8 +246,8 @@ $panel_active = 'bilancio';
                 <?php for ($m = 1; $m <= 12; $m++): $d = $monthlyData[$m]; ?>
                     <tr>
                         <td><strong><?= tr_h($mesiIt[$m]) ?></strong></td>
-                        <td class="num">€ <?= number_format((float)$d['rev']['lordo'], 2, ',', '.') ?></td>
-                        <td class="num">€ <?= number_format((float)$d['rev']['netto'], 2, ',', '.') ?></td>
+                        <td class="num"><?= tr_cur_sym() ?> <?= number_format((float)$d['rev']['lordo'], 2, ',', '.') ?></td>
+                        <td class="num"><?= tr_cur_sym() ?> <?= number_format((float)$d['rev']['netto'], 2, ',', '.') ?></td>
                         <td class="num"><?= number_format((float)$d['costs']['spese_spedizione'], 2, ',', '.') ?></td>
                         <td class="num"><?= number_format((float)$d['costs']['spesa_merce'], 2, ',', '.') ?></td>
                         <td class="num"><?= number_format((float)$d['costs']['spesa_ads'], 2, ',', '.') ?></td>
@@ -255,9 +255,9 @@ $panel_active = 'bilancio';
                         <td class="num"><?= number_format((float)$d['costs']['spesa_team'], 2, ',', '.') ?></td>
                         <td class="num"><?= number_format((float)$d['costs']['spese_varie'], 2, ',', '.') ?></td>
                         <td class="num"><?= number_format((float)$d['costs']['bonifici_brt'], 2, ',', '.') ?></td>
-                        <td class="num">€ <?= number_format((float)$d['tot_c'], 2, ',', '.') ?></td>
+                        <td class="num"><?= tr_cur_sym() ?> <?= number_format((float)$d['tot_c'], 2, ',', '.') ?></td>
                         <td class="num" style="color: <?= $d['margin'] >= 0 ? 'var(--pos)' : 'var(--neg)' ?>;">
-                            € <?= number_format((float)$d['margin'], 2, ',', '.') ?>
+                            <?= tr_cur_sym() ?> <?= number_format((float)$d['margin'], 2, ',', '.') ?>
                         </td>
                         <td><a href="?view=day&year=<?= $year ?>&month=<?= $m ?>" class="btn-sm">Giorni →</a></td>
                     </tr>
@@ -266,8 +266,8 @@ $panel_active = 'bilancio';
                 <tfoot>
                     <tr style="font-weight: 700;">
                         <td>TOTALI <?= $year ?></td>
-                        <td class="num">€ <?= number_format($totals['lordo'], 2, ',', '.') ?></td>
-                        <td class="num">€ <?= number_format($totals['netto'], 2, ',', '.') ?></td>
+                        <td class="num"><?= tr_cur_sym() ?> <?= number_format($totals['lordo'], 2, ',', '.') ?></td>
+                        <td class="num"><?= tr_cur_sym() ?> <?= number_format($totals['netto'], 2, ',', '.') ?></td>
                         <td class="num"><?= number_format($totals['sped'], 2, ',', '.') ?></td>
                         <td class="num"><?= number_format($totals['merce'], 2, ',', '.') ?></td>
                         <td class="num"><?= number_format($totals['ads'], 2, ',', '.') ?></td>
@@ -275,9 +275,9 @@ $panel_active = 'bilancio';
                         <td class="num"><?= number_format($totals['team'], 2, ',', '.') ?></td>
                         <td class="num"><?= number_format($totals['varie'], 2, ',', '.') ?></td>
                         <td class="num"><?= number_format($totals['brt'], 2, ',', '.') ?></td>
-                        <td class="num">€ <?= number_format($totals['tot_c'], 2, ',', '.') ?></td>
+                        <td class="num"><?= tr_cur_sym() ?> <?= number_format($totals['tot_c'], 2, ',', '.') ?></td>
                         <td class="num" style="color: <?= $totals['margin'] >= 0 ? 'var(--pos)' : 'var(--neg)' ?>;">
-                            € <?= number_format($totals['margin'], 2, ',', '.') ?>
+                            <?= tr_cur_sym() ?> <?= number_format($totals['margin'], 2, ',', '.') ?>
                         </td>
                         <td></td>
                     </tr>
@@ -292,7 +292,7 @@ $panel_active = 'bilancio';
 <script>
 // Auto-save AJAX per ogni cella, no <form> annidati (HTML invalido in <tr>)
 function fmtEuro(n) {
-    return '€ ' + n.toFixed(2).replace('.', ',');
+    return '<?= tr_cur_sym() ?> ' + n.toFixed(2).replace('.', ',');
 }
 function updateRowTotal(row) {
     let tot = 0;

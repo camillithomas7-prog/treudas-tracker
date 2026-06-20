@@ -38,7 +38,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                 echo json_encode(['ok' => true, 'variant_id' => $vid, 'cost' => $cost]);
                 exit;
             }
-            $msg = sprintf('✔ Costo bundle #%d aggiornato a € %s.', $vid, number_format($cost, 2, ',', '.'));
+            $msg = sprintf('✔ Costo bundle #%d aggiornato a %s %s.', $vid, tr_cur_sym(), number_format($cost, 2, ',', '.'));
         }
     } elseif ($action === 'sync_products') {
         $r = sh_sync_products();
@@ -108,23 +108,23 @@ $panel_active = 'costi';
     <section class="pnl-summary">
         <div class="pnl-cell">
             <div class="pnl-label">Ricavo</div>
-            <div class="pnl-value" style="color: var(--pos);">€ <?= number_format($pnl['revenue'], 2, ',', '.') ?></div>
+            <div class="pnl-value" style="color: var(--pos);"><?= tr_cur_sym() ?> <?= number_format($pnl['revenue'], 2, ',', '.') ?></div>
         </div>
         <div class="pnl-cell">
             <div class="pnl-label">Costo bundle (fornitore)</div>
-            <div class="pnl-value">€ <?= number_format($pnl['cogs_bundle'], 2, ',', '.') ?></div>
+            <div class="pnl-value"><?= tr_cur_sym() ?> <?= number_format($pnl['cogs_bundle'], 2, ',', '.') ?></div>
         </div>
         <div class="pnl-cell">
             <div class="pnl-label">Costo spedizione</div>
-            <div class="pnl-value">€ <?= number_format($pnl['cogs_shipping'], 2, ',', '.') ?></div>
+            <div class="pnl-value"><?= tr_cur_sym() ?> <?= number_format($pnl['cogs_shipping'], 2, ',', '.') ?></div>
         </div>
         <div class="pnl-cell">
             <div class="pnl-label">Perdita rientri</div>
-            <div class="pnl-value" style="color: var(--warn);">€ <?= number_format($pnl['cogs_loss'], 2, ',', '.') ?></div>
+            <div class="pnl-value" style="color: var(--warn);"><?= tr_cur_sym() ?> <?= number_format($pnl['cogs_loss'], 2, ',', '.') ?></div>
         </div>
         <div class="pnl-cell pnl-margin">
             <div class="pnl-label">Margine lordo</div>
-            <div class="pnl-value" style="color: <?= $pnl['margin'] >= 0 ? 'var(--pos)' : 'var(--neg)' ?>;">€ <?= number_format($pnl['margin'], 2, ',', '.') ?></div>
+            <div class="pnl-value" style="color: <?= $pnl['margin'] >= 0 ? 'var(--pos)' : 'var(--neg)' ?>;"><?= tr_cur_sym() ?> <?= number_format($pnl['margin'], 2, ',', '.') ?></div>
             <div class="pnl-sub"><?= (int)$pnl['n'] ?> ordini · <?= $pnl['revenue'] > 0 ? number_format(($pnl['margin'] / $pnl['revenue']) * 100, 1, ',', '.') : '0' ?>%</div>
         </div>
     </section>
@@ -136,15 +136,15 @@ $panel_active = 'costi';
         <div class="cogs-kpi cogs-kpi-cyan">
             <div class="cogs-kpi-label">● Spedizione</div>
             <input type="text" name="shipping" value="<?= number_format($unitCosts['shipping'], 2, '.', '') ?>" class="cogs-kpi-input">
-            <div class="cogs-kpi-sub">€/ordine — Pagata al fornitore su ogni ordine spedito al cliente</div>
-            <div class="cogs-kpi-meta">applicato a <?= (int)$cogsKpi['n_spediti'] ?> ordini consegnati → € <?= number_format($cogsKpi['cost_shipping'], 2, ',', '.') ?></div>
+            <div class="cogs-kpi-sub"><?= tr_cur_sym() ?>/ordine — Pagata al fornitore su ogni ordine spedito al cliente</div>
+            <div class="cogs-kpi-meta">applicato a <?= (int)$cogsKpi['n_spediti'] ?> ordini consegnati → <?= tr_cur_sym() ?> <?= number_format($cogsKpi['cost_shipping'], 2, ',', '.') ?></div>
         </div>
 
         <div class="cogs-kpi cogs-kpi-orange">
             <div class="cogs-kpi-label">● Perdita rientro</div>
             <input type="text" name="return" value="<?= number_format($unitCosts['return'], 2, '.', '') ?>" class="cogs-kpi-input">
-            <div class="cogs-kpi-sub">€/ordine rientrato — Costo perso quando il cliente non ritira (es. quota di spedizione non rimborsata dal fornitore)</div>
-            <div class="cogs-kpi-meta">applicato a <?= (int)$cogsKpi['n_rientrati'] ?> ordini rientrati → € <?= number_format($cogsKpi['cost_return'], 2, ',', '.') ?></div>
+            <div class="cogs-kpi-sub"><?= tr_cur_sym() ?>/ordine rientrato — Costo perso quando il cliente non ritira (es. quota di spedizione non rimborsata dal fornitore)</div>
+            <div class="cogs-kpi-meta">applicato a <?= (int)$cogsKpi['n_rientrati'] ?> ordini rientrati → <?= tr_cur_sym() ?> <?= number_format($cogsKpi['cost_return'], 2, ',', '.') ?></div>
         </div>
 
         <div style="grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 14px; flex-wrap: wrap;">
@@ -189,10 +189,10 @@ $panel_active = 'costi';
                     <tr>
                         <th>Prodotto / Bundle</th>
                         <th>SKU</th>
-                        <th class="num">Prezzo (€)</th>
+                        <th class="num">Prezzo (<?= tr_cur_sym() ?>)</th>
                         <th class="num">Volume (pz)</th>
                         <th class="num">Ordini</th>
-                        <th class="num">Costo nostro (€)</th>
+                        <th class="num">Costo nostro (<?= tr_cur_sym() ?>)</th>
                         <th class="num">Margine unitario</th>
                     </tr>
                 </thead>
@@ -216,7 +216,7 @@ $panel_active = 'costi';
                             <span class="muted" style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">└ <?= tr_h($v['variant_title']) ?: 'Default' ?></span>
                         </td>
                         <td><small class="muted"><?= tr_h($v['sku']) ?: '—' ?></small></td>
-                        <td class="num">€ <?= number_format((float)$v['price'], 2, ',', '.') ?></td>
+                        <td class="num"><?= tr_cur_sym() ?> <?= number_format((float)$v['price'], 2, ',', '.') ?></td>
                         <td class="num" style="color: var(--cyan);"><?= number_format((int)$v['volume'], 0, ',', '.') ?></td>
                         <td class="num"><?= number_format((int)$v['ordini'], 0, ',', '.') ?></td>
                         <td class="num">
@@ -227,7 +227,7 @@ $panel_active = 'costi';
                             </form>
                         </td>
                         <td class="num" style="color: <?= $marginUnit >= 0 ? 'var(--pos)' : 'var(--neg)' ?>;">
-                            € <?= number_format($marginUnit, 2, ',', '.') ?>
+                            <?= tr_cur_sym() ?> <?= number_format($marginUnit, 2, ',', '.') ?>
                         </td>
                     </tr>
                 <?php endforeach; endif; ?>

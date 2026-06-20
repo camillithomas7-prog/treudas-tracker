@@ -60,6 +60,12 @@ function tr_money(float $v, string $cur = 'EUR'): string {
     return $sym . number_format($v, 2, ',', '.');
 }
 
+/** Simbolo valuta dello store attivo (o di $cur se passata). */
+function tr_cur_sym(?string $cur = null): string {
+    $cur = $cur ?? (function_exists('tr_store_currency') ? tr_store_currency() : 'EUR');
+    return ['EUR' => '€', 'USD' => '$', 'GBP' => '£'][$cur] ?? '';
+}
+
 function tr_pct(int $num, int $den): string {
     if ($den <= 0) return '0%';
     return number_format(($num / $den) * 100, 1, ',', '.') . '%';

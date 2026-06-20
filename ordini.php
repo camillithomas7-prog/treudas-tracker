@@ -213,13 +213,13 @@ $panel_active = 'ordini';
                         <?php if ($o['phone']): ?><br><small class="muted"><?= tr_h($o['phone']) ?></small><?php endif; ?>
                     </td>
                     <td><?= tr_h($o['shipping_city']) ?: '—' ?></td>
-                    <td class="num" style="color: var(--pos);">€ <?= number_format((float)$o['total_price'], 2, ',', '.') ?></td>
+                    <td class="num" style="color: var(--pos);"><?= tr_cur_sym() ?> <?= number_format((float)$o['total_price'], 2, ',', '.') ?></td>
                     <?php $p = $pnlMap[(int)$o['id']]; ?>
-                    <td class="num" title="Bundle €<?= number_format($p['cogs_bundle'], 2, ',', '.') ?> + Spedizione €<?= number_format($p['cogs_shipping'], 2, ',', '.') ?><?= $p['cogs_loss'] > 0 ? ' + Perdita €' . number_format($p['cogs_loss'], 2, ',', '.') : '' ?>">
-                        € <?= number_format($p['cost_total'], 2, ',', '.') ?>
+                    <td class="num" title="Bundle <?= tr_cur_sym() ?><?= number_format($p['cogs_bundle'], 2, ',', '.') ?> + Spedizione <?= tr_cur_sym() ?><?= number_format($p['cogs_shipping'], 2, ',', '.') ?><?= $p['cogs_loss'] > 0 ? ' + Perdita <?= tr_cur_sym() ?>' . number_format($p['cogs_loss'], 2, ',', '.') : '' ?>">
+                        <?= tr_cur_sym() ?> <?= number_format($p['cost_total'], 2, ',', '.') ?>
                     </td>
                     <td class="num" style="color: <?= $p['margin'] >= 0 ? 'var(--pos)' : 'var(--neg)' ?>; font-weight: 700;">
-                        € <?= number_format($p['margin'], 2, ',', '.') ?>
+                        <?= tr_cur_sym() ?> <?= number_format($p['margin'], 2, ',', '.') ?>
                         <?php if ($p['revenue'] > 0): ?>
                             <br><small class="muted"><?= number_format(($p['margin'] / $p['revenue']) * 100, 0, ',', '.') ?>%</small>
                         <?php endif; ?>
@@ -269,10 +269,10 @@ $panel_active = 'ordini';
             <tfoot>
                 <tr>
                     <td colspan="3" style="text-align:right;">Totali pagina (<?= count($orders) ?> ordini)</td>
-                    <td class="num" style="color: var(--pos);">€ <?= number_format($pageTotals['revenue'], 2, ',', '.') ?></td>
-                    <td class="num">€ <?= number_format($pageTotals['cost'], 2, ',', '.') ?></td>
+                    <td class="num" style="color: var(--pos);"><?= tr_cur_sym() ?> <?= number_format($pageTotals['revenue'], 2, ',', '.') ?></td>
+                    <td class="num"><?= tr_cur_sym() ?> <?= number_format($pageTotals['cost'], 2, ',', '.') ?></td>
                     <td class="num" style="color: <?= $pageTotals['margin'] >= 0 ? 'var(--pos)' : 'var(--neg)' ?>;">
-                        € <?= number_format($pageTotals['margin'], 2, ',', '.') ?>
+                        <?= tr_cur_sym() ?> <?= number_format($pageTotals['margin'], 2, ',', '.') ?>
                     </td>
                     <td colspan="5"></td>
                 </tr>
