@@ -8,9 +8,10 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/inc/db.php';
-require_once __DIR__ . '/inc/guard.php';
 require_once __DIR__ . '/inc/helpers.php';
 tracker_install_schema();
+// NIENTE guard qui: la callback è un redirect cross-site da Shopify e il cookie di
+// sessione potrebbe non arrivare. È già protetta da verifica state (anti-CSRF) + HMAC.
 
 function trcb_fail(string $msg, int $code = 400): void {
     http_response_code($code);
