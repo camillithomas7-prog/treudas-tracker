@@ -78,10 +78,8 @@ function tr_user_create(string $email, string $password, string $name = ''): int
     ");
     $stmt->execute([$email, $hash, ($name !== '' ? $name : null), time()]);
     $uid = (int)tracker_db()->lastInsertId();
-    // il PRIMO utente eredita gli store storici "orfani" (user_id=0, dato pre-multi-utente)
-    if ($wasFirst) {
-        tracker_db()->prepare("UPDATE stores SET user_id = ? WHERE user_id = 0")->execute([$uid]);
-    }
+    // NIENTE eredità automatica: ogni account nasce VUOTO e collega solo i propri store.
+    // (I dati legacy con user_id=0 restano orfani/invisibili finché non li si rivendica a mano.)
     return $uid;
 }
 

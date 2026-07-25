@@ -448,6 +448,32 @@ function tracker_install_schema(): void {
             if ($v !== false) $insS->execute([$k, (string)$v]);
         }
     }
+
+    // ── BOOTSTRAP OWNER (una-tantum) ─────────────────────────────────────
+    // Gli store legacy (TREUDAS + gli altri già presenti) appartengono all'account
+    // owner treudasofficial@outlook.it. L'account rovidashop@outlook.com resta VUOTO
+    // (account "cliente" demo). Gira una sola volta grazie al marker in settings.
+    $done = $pdo->query("SELECT value FROM settings WHERE key='owner_bootstrap_v1'")->fetchColumn();
+    if (!$done) {
+        $ownerEmail = 'treudasofficial@outlook.it';
+        $sel = $pdo->prepare("SELECT id FROM users WHERE email = ?");
+        $sel->execute([$ownerEmail]);
+        $ownerId = (int)($sel->fetchColumn() ?: 0);
+        if (!$ownerId) {
+            $pdo->prepare("INSERT INTO users (email, password_hash, name, created_at) VALUES (?,?,?,?)")
+                ->execute([$ownerEmail, password_hash('123prova', PASSWORD_DEFAULT), 'TREUDAS', time()]);
+            $ownerId = (int)$pdo->lastInsertId();
+        }
+        // gli store finora assegnati per errore a rovidashop@outlook.com → all'owner
+        $sel->execute(['rovidashop@outlook.com']);
+        $rovidaId = (int)($sel->fetchColumn() ?: 0);
+        if ($rovidaId) {
+            $pdo->prepare("UPDATE stores SET user_id = ? WHERE user_id = ?")->execute([$ownerId, $rovidaId]);
+        }
+        // e gli store legacy ancora orfani (mai rivendicati) → all'owner
+        $pdo->prepare("UPDATE stores SET user_id = ? WHERE user_id = 0")->execute([$ownerId]);
+        $pdo->prepare("INSERT OR REPLACE INTO settings (key,value) VALUES ('owner_bootstrap_v1','1')")->execute();
+    }
 }
 
 // Helper multi-store (sempre disponibili dove è incluso db.php)
