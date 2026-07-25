@@ -6,13 +6,15 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/inc/db.php';
+require_once __DIR__ . '/inc/guard.php';
 require_once __DIR__ . '/inc/helpers.php';
 tracker_install_schema();
 
 $sid   = (int)($_GET['store'] ?? 0);
 $store = $sid ? tr_store_get($sid) : null;
 
-if (!$store) { header('Location: /stores.php'); exit; }
+// solo uno store DELL'UTENTE loggato può avviare l'OAuth
+if (!tr_store_owned($store)) { header('Location: /stores.php'); exit; }
 if (empty($store['client_id']) || empty($store['myshopify_domain'])) {
     header('Location: /stores.php?edit=' . $sid . '&err=oauth_missing'); exit;
 }

@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/inc/db.php';
+require_once __DIR__ . '/inc/guard.php';
 require_once __DIR__ . '/inc/helpers.php';
 require_once __DIR__ . '/inc/stats.php';
 

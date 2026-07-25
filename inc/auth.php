@@ -61,15 +61,28 @@ function tr_auth_logout(): void {
     session_destroy();
 }
 
-function tr_user_create(string $email, string $password): int {
+function tr_user_by_email(string $email): ?array {
+    $stmt = tracker_db()->prepare("SELECT id, email, name FROM users WHERE email = ?");
+    $stmt->execute([strtolower(trim($email))]);
+    $u = $stmt->fetch();
+    return $u ?: null;
+}
+
+function tr_user_create(string $email, string $password, string $name = ''): int {
     $email = strtolower(trim($email));
-    $hash = password_hash($password, PASSWORD_DEFAULT);
+    $hash  = password_hash($password, PASSWORD_DEFAULT);
+    $wasFirst = (tr_users_count() === 0);
     $stmt = tracker_db()->prepare("
-        INSERT INTO users (email, password_hash, created_at)
-        VALUES (?, ?, ?)
+        INSERT INTO users (email, password_hash, name, created_at)
+        VALUES (?, ?, ?, ?)
     ");
-    $stmt->execute([$email, $hash, time()]);
-    return (int)tracker_db()->lastInsertId();
+    $stmt->execute([$email, $hash, ($name !== '' ? $name : null), time()]);
+    $uid = (int)tracker_db()->lastInsertId();
+    // il PRIMO utente eredita gli store storici "orfani" (user_id=0, dato pre-multi-utente)
+    if ($wasFirst) {
+        tracker_db()->prepare("UPDATE stores SET user_id = ? WHERE user_id = 0")->execute([$uid]);
+    }
+    return $uid;
 }
 
 function tr_users_count(): int {

@@ -5,6 +5,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/inc/db.php';
+require_once __DIR__ . '/inc/guard.php';
 require_once __DIR__ . '/inc/helpers.php';
 
 tracker_install_schema();

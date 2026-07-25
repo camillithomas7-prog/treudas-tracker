@@ -6,10 +6,32 @@
 
 declare(strict_types=1);
 
-/** Tutti gli store (ordinati). */
+/**
+ * ID dell'utente loggato (0 se nessuna sessione, es. contesto API/webhook).
+ * Tutto lo scoping multi-utente passa da qui.
+ */
+function tr_uid(): int {
+    static $uid = null;
+    if ($uid !== null) return $uid;
+    if (function_exists('tr_auth_start')) tr_auth_start();
+    elseif (session_status() === PHP_SESSION_NONE) { @session_start(); }
+    $uid = isset($_SESSION['uid']) ? (int)$_SESSION['uid'] : 0;
+    return $uid;
+}
+
+/** Verifica che uno store appartenga all'utente loggato. */
+function tr_store_owned(?array $s): bool {
+    return $s && (int)($s['user_id'] ?? 0) === tr_uid();
+}
+
+/** Tutti gli store DELL'UTENTE LOGGATO (ordinati). */
 function tr_stores_all(bool $includeArchived = false): array {
-    $sql = "SELECT * FROM stores" . ($includeArchived ? "" : " WHERE archived = 0") . " ORDER BY position ASC, id ASC";
-    return tracker_db()->query($sql)->fetchAll(PDO::FETCH_ASSOC);
+    $sql = "SELECT * FROM stores WHERE user_id = ?"
+         . ($includeArchived ? "" : " AND archived = 0")
+         . " ORDER BY position ASC, id ASC";
+    $st = tracker_db()->prepare($sql);
+    $st->execute([tr_uid()]);
+    return $st->fetchAll(PDO::FETCH_ASSOC);
 }
 
 function tr_store_get(int $id): ?array {
@@ -55,11 +77,12 @@ function tr_store_current_id(): int {
     static $cur = null;
     if ($cur !== null) return $cur;
 
+    // risolve slug/id SOLO tra gli store dell'utente loggato (blocca ?store=<altro utente>)
     $resolve = function($v): ?int {
         $v = (string)$v;
         if ($v === '') return null;
-        if (ctype_digit($v)) { $s = tr_store_get((int)$v); return $s ? (int)$s['id'] : null; }
-        $s = tr_store_by_slug($v); return $s ? (int)$s['id'] : null;
+        $s = ctype_digit($v) ? tr_store_get((int)$v) : tr_store_by_slug($v);
+        return tr_store_owned($s) ? (int)$s['id'] : null;
     };
 
     $id = null;
@@ -140,8 +163,8 @@ function tr_store_upsert(array $d): int {
             if (in_array($k, ['admin_token','webhook_secret','client_id','client_secret'], true) && $v === null) continue;
             $set[] = "$k = ?"; $args[] = $v;
         }
-        $args[] = $id;
-        $db->prepare("UPDATE stores SET " . implode(', ', $set) . " WHERE id = ?")->execute($args);
+        $args[] = $id; $args[] = tr_uid();
+        $db->prepare("UPDATE stores SET " . implode(', ', $set) . " WHERE id = ? AND user_id = ?")->execute($args);
         return $id;
     }
 
@@ -149,9 +172,9 @@ function tr_store_upsert(array $d): int {
     $base = $slug; $i = 2;
     while (tr_store_by_slug($slug)) { $slug = $base . '-' . $i; $i++; }
     $pos = (int)$db->query("SELECT COALESCE(MAX(position),0)+1 FROM stores")->fetchColumn();
-    $db->prepare("INSERT INTO stores (name,slug,myshopify_domain,public_domain,admin_token,webhook_secret,client_id,client_secret,track_key,currency,color,position,archived,created_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
-        ->execute([$fields['name'],$slug,$fields['myshopify_domain'],$fields['public_domain'],$fields['admin_token'],$fields['webhook_secret'],
+    $db->prepare("INSERT INTO stores (user_id,name,slug,myshopify_domain,public_domain,admin_token,webhook_secret,client_id,client_secret,track_key,currency,color,position,archived,created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+        ->execute([tr_uid(),$fields['name'],$slug,$fields['myshopify_domain'],$fields['public_domain'],$fields['admin_token'],$fields['webhook_secret'],
             $fields['client_id'],$fields['client_secret'],bin2hex(random_bytes(8)),$fields['currency'],$fields['color'],$pos,$fields['archived'],time()]);
     return (int)$db->lastInsertId();
 }

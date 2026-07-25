@@ -6,6 +6,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/inc/db.php';
+require_once __DIR__ . '/inc/guard.php';
 require_once __DIR__ . '/inc/helpers.php';
 
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0, private');
@@ -23,10 +24,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $id = tr_store_upsert($_POST);
             $msg = '✔ Store «' . $name . '» salvato.';
         } elseif ($action === 'archive') {
-            tracker_db()->prepare("UPDATE stores SET archived = 1 WHERE id = ?")->execute([(int)$_POST['id']]);
+            tracker_db()->prepare("UPDATE stores SET archived = 1 WHERE id = ? AND user_id = ?")->execute([(int)$_POST['id'], tr_uid()]);
             $msg = 'Store archiviato.';
         } elseif ($action === 'restore') {
-            tracker_db()->prepare("UPDATE stores SET archived = 0 WHERE id = ?")->execute([(int)$_POST['id']]);
+            tracker_db()->prepare("UPDATE stores SET archived = 0 WHERE id = ? AND user_id = ?")->execute([(int)$_POST['id'], tr_uid()]);
             $msg = 'Store ripristinato.';
         }
     } catch (Throwable $e) {
@@ -41,7 +42,8 @@ $webhookUrl = $scheme . '://' . $host . '/api/webhook.php';
 $trackUrl   = $scheme . '://' . $host . '/api/track.php';
 $colors = ['#f59e0b','#2f8bff','#e8467e','#34d399','#a855f7','#ef4444','#14b8a6','#f97316'];
 $edit = null;
-if (isset($_GET['edit'])) $edit = tr_store_get((int)$_GET['edit']);
+// solo uno store DELL'UTENTE è modificabile (blocca ?edit=<id altrui>)
+if (isset($_GET['edit'])) { $e = tr_store_get((int)$_GET['edit']); if (tr_store_owned($e)) $edit = $e; }
 $panel_active = '';
 ?>
 <!doctype html>

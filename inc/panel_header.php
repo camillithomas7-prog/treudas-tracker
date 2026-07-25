@@ -54,7 +54,21 @@ $__curColor = $__cur['color'] ?? '#f59e0b';
         <a href="/bilancio.php"    class="panel-link <?= $panel_active==='bilancio' ? 'active' : '' ?>">Bilancio</a>
         <a href="/setup.php"       class="panel-link <?= $panel_active==='setup' ? 'active' : '' ?>">Setup</a>
     </nav>
-    <div class="user-info">
-        <span><?= date('d M H:i') ?></span>
+    <div class="user-info" style="display:flex;align-items:center;gap:12px;">
+        <span style="opacity:.6;font-size:13px;"><?= date('d M H:i') ?></span>
+        <?php $__u = function_exists('tr_auth_user') ? tr_auth_user() : null; if ($__u): ?>
+        <details class="usermenu" style="position:relative;">
+            <summary style="list-style:none;cursor:pointer;display:flex;align-items:center;gap:7px;background:var(--bg-card-2,#161b2e);border:1px solid var(--border,#26304a);border-radius:9px;padding:6px 10px;font-size:13px;font-weight:700;color:var(--text,#e7ecf5);">
+                <span style="width:22px;height:22px;border-radius:50%;background:var(--accent,#f59e0b);color:#1a1200;display:grid;place-items:center;font-weight:800;font-size:12px;"><?= strtoupper(substr((string)($__u['name'] ?: $__u['email']),0,1)) ?></span>
+                <span style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><?= htmlspecialchars($__u['name'] ?: $__u['email']) ?></span>
+            </summary>
+            <div style="position:absolute;top:calc(100% + 6px);right:0;min-width:190px;background:var(--bg-card,#10131f);border:1px solid var(--border,#26304a);border-radius:11px;padding:6px;z-index:200;box-shadow:0 16px 40px rgba(0,0,0,.5);">
+                <div style="padding:8px 11px;font-size:12px;color:var(--muted,#9aa4bd);border-bottom:1px solid var(--border,#26304a);margin-bottom:4px;word-break:break-all;"><?= htmlspecialchars($__u['email']) ?></div>
+                <a href="/stores.php" style="display:block;padding:8px 11px;border-radius:8px;text-decoration:none;color:var(--text,#e7ecf5);font-size:14px;font-weight:600;">I miei store</a>
+                <a href="/logout.php" style="display:block;padding:8px 11px;border-radius:8px;text-decoration:none;color:#fca5a5;font-size:14px;font-weight:600;">Esci</a>
+            </div>
+        </details>
+        <?php endif; ?>
     </div>
+    <style>.usermenu>summary::-webkit-details-marker{display:none;} .usermenu div a:hover{background:var(--bg-card-2,#161b2e);}</style>
 </header>

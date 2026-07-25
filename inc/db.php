@@ -410,6 +410,17 @@ function tracker_install_schema(): void {
         $pdo->exec("DROP TABLE shopify_costs_daily_old");
     }
 
+    // ── MULTI-UTENTE: ogni store appartiene a un utente ──────────────────
+    // user_id=0 = "orfano" (dato pre-esistente non ancora rivendicato); il primo
+    // utente registrato eredita tutti gli store orfani (vedi tr_user_create()).
+    if (!$hasCol('stores', 'user_id')) {
+        $pdo->exec("ALTER TABLE stores ADD COLUMN user_id INTEGER NOT NULL DEFAULT 0");
+        $pdo->exec("CREATE INDEX IF NOT EXISTS idx_stores_user ON stores(user_id)");
+        $firstUid = (int)($pdo->query("SELECT MIN(id) FROM users")->fetchColumn() ?: 0);
+        if ($firstUid > 0) $pdo->exec("UPDATE stores SET user_id = $firstUid WHERE user_id = 0");
+    }
+    if (!$hasCol('users', 'name')) $pdo->exec("ALTER TABLE users ADD COLUMN name TEXT");
+
     // Seed store #1 (TREUDAS storico) + migra chiavi per-store da settings → store_settings
     $nStores = (int)$pdo->query("SELECT COUNT(*) FROM stores")->fetchColumn();
     if ($nStores === 0) {
